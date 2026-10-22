@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Examination Forge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --desk:#161310; --paper:#f5efe0; --paper2:#ece4cf;
+  --ink:#211d16; --ink2:#6a6252; --faint:rgba(245,239,224,.5);
+  --red:#b3261e; --green:#2e6b3f; --ochre:#8a6a17; --line:rgba(33,29,22,.28);
+  --serif:'Fraunces',Georgia,serif; --mono:'IBM Plex Mono',ui-monospace,monospace; --hand:'Caveat',cursive;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+::selection{background:var(--red);color:var(--paper)}
+html{scroll-behavior:smooth}
+body{
+  background:var(--desk); color:var(--paper); font-family:var(--serif); min-height:100vh;
+}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;opacity:.55;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}
+button{cursor:pointer;font-family:inherit}
+:focus-visible{outline:2px dashed var(--red);outline-offset:2px}
+
+/* ---------- masthead ---------- */
+.masthead{display:flex;flex-wrap:wrap;align-items:flex-end;gap:18px 30px;
+  padding:30px 42px 20px;border-bottom:1px solid rgba(245,239,224,.18)}
+.masthead h1{font-weight:900;font-size:clamp(26px,3.4vw,40px);letter-spacing:-.5px;line-height:1.05}
+.masthead h1 em{font-style:italic;font-weight:500}
+.masthead .sub{width:100%;font:500 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
+.masthead .sub b{color:var(--red);font-weight:600;padding:0 6px}
+.meter{margin-left:auto;font:400 11px var(--mono);border:1px solid rgba(245,239,224,.3);padding:9px 14px;color:var(--faint)}
+.meter .t{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:rgba(245,239,224,.4);margin-bottom:4px}
+.meter b{color:var(--paper);font-weight:600}
+.meter .red{color:#e0604f}
+
+/* ---------- layout ---------- */
+main{display:grid;grid-template-columns:384px minmax(0,1fr);gap:34px;align-items:start;
+  max-width:1480px;margin:0 auto;padding:34px 42px 90px}
+
+/* ---------- job ticket ---------- */
+.ticket{position:relative;background:var(--paper);color:var(--ink);transform:rotate(-.6deg);
+  padding:24px 24px 26px 64px;box-shadow:0 20px 44px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.4)}
+.ticket::before,.paper::before{content:'';position:absolute;top:0;bottom:0;left:44px;width:1.5px;background:var(--red);opacity:.45}
+.holes{position:absolute;top:13px;left:6px;right:6px;display:flex;justify-content:space-evenly}
+.holes span{width:13px;height:13px;border-radius:50%;background:var(--desk);box-shadow:inset 0 2px 3px rgba(0,0,0,.7)}
+.t-label{font:600 9.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink2);margin:18px 0 7px}
+.t-label:first-of-type{margin-top:0}
+.sect{border-top:1px dashed var(--line);margin-top:18px;padding-top:16px}
+
+#dz{border:1.5px dashed var(--ink);padding:20px 14px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s}
+#dz:hover,#dz.drag{border-color:var(--red);background:rgba(179,38,30,.06)}
+#dz .big{font-style:italic;font-size:15px;margin-top:8px}
+#dz .tiny{font:400 10px var(--mono);color:var(--ink2);margin-top:7px;line-height:1.6}
+#dz .ic{width:22px;height:22px;stroke:var(--red)}
+#fileInput{display:none}
+.fmeta{font:400 11.5px var(--mono);line-height:1.7}
+.fmeta .fname{font-weight:600;word-break:break-all}
+.chip{display:inline-block;border:1px solid var(--ink);padding:1px 6px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin:2px 4px 2px 0}
+.frow{display:flex;justify-content:space-between;border-bottom:1px dotted var(--line)}
+.frow b{font-weight:600}
+#fileList{max-height:230px;overflow-y:auto;margin-top:10px;border-top:1px dotted var(--line);border-bottom:1px dotted var(--line)}
+.fitem{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dotted var(--line);font:400 11px var(--mono)}
+.fitem:last-child{border-bottom:none}
+.fitem .fi-name{flex:1;min-width:0;word-break:break-all}
+.fitem .fi-name b{font-weight:600;display:block;font-size:11.5px}
+.fitem .fi-name .fi-meta{display:block;color:var(--ink2);font-size:10px;margin-top:2px}
+.fitem .rmOne{border:1px solid var(--ink);background:none;width:20px;height:20px;line-height:0;flex:none;color:var(--ink)}
+.fitem .rmOne:hover{border-color:var(--red);color:var(--red)}
+.fitem .rmOne .ic{width:10px;height:10px}
+.ftotal{margin-top:8px;font:600 10.5px var(--mono);color:var(--ink2);display:flex;justify-content:space-between}
+.ocrbar{height:3px;background:rgba(33,29,22,.15);margin-top:8px;display:none}
+.ocrbar i{display:block;height:100%;background:var(--red);width:0%;transition:width .2s}
+
+.seg{display:flex}
+.seg button{flex:1;font:600 9.5px var(--mono);letter-spacing:.08em;padding:8px 0;background:none;
+  border:1px solid var(--ink);margin-left:-1px;color:var(--ink)}
+.seg button:first-child{margin-left:0}
+.seg button.on{background:var(--ink);color:var(--paper)}
+
+.field{margin-top:11px}
+.field label{font:500 9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);display:block;margin-bottom:2px}
+.field input,.field select{width:100%;background:transparent;border:0;border-bottom:1.5px solid rgba(33,29,22,.4);
+  padding:6px 2px;font:400 12.5px var(--mono);color:var(--ink);border-radius:0}
+.field input:focus,.field select:focus{outline:none;border-bottom-color:var(--red)}
+.hint{font:italic 400 11.5px var(--serif);color:var(--ink2);margin-top:10px;line-height:1.5}
+.hint code{font:600 10.5px var(--mono);background:rgba(33,29,22,.07);padding:1px 5px}
+
+.ballot{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.ballot input{appearance:none;width:16px;height:16px;border:1.5px solid var(--ink);flex:none;margin-top:1px;position:relative;cursor:pointer}
+.ballot input:checked::after{content:'✕';position:absolute;inset:-4px;font:600 15px var(--mono);color:var(--red)}
+.ballot .bt{font-size:13px;font-weight:600;letter-spacing:.02em}
+.ballot .bs{font:italic 400 11px var(--serif);color:var(--ink2);margin-top:2px;line-height:1.45}
+#budgetRow{margin-top:12px}
+#budgetRow output{font:600 11px var(--mono);float:right}
+input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:2px;background:rgba(33,29,22,.35);margin:12px 0 4px}
+input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:12px;background:var(--red);border:none;transform:rotate(45deg);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red);border:none;transform:rotate(45deg);cursor:pointer}
+#condLine{font:400 10px var(--mono);color:var(--ink2);margin-top:4px;min-height:14px}
+
+.duo{display:flex;gap:22px}
+.step{flex:1}
+.step .lab{font:500 9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);margin-bottom:5px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:24px;height:24px;border:1.5px solid var(--ink);background:none;font:600 14px var(--mono);line-height:1}
+.stepper button:hover{background:var(--ink);color:var(--paper)}
+.stepper .sv{font:600 15px var(--mono);min-width:26px;text-align:center}
+
+#forgeBtn{width:100%;margin-top:20px;padding:14px;border:2px solid var(--red);background:none;color:var(--red);
+  font:600 13px var(--mono);letter-spacing:.16em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:10px;
+  transition:background .15s,color .15s,transform .1s}
+#forgeBtn:hover:not(:disabled){background:var(--red);color:var(--paper)}
+#forgeBtn:active:not(:disabled){transform:translateY(2px)}
+#forgeBtn:disabled{opacity:.4;cursor:not-allowed;border-style:dashed}
+#forgeBtn .ic{width:17px;height:17px;stroke:currentColor}
+#forgeStatus{font:400 10.5px var(--mono);color:var(--ink2);text-align:center;margin-top:8px;min-height:14px}
+.legend{font:italic 400 11.5px var(--serif);color:var(--ink2);margin-top:14px;line-height:1.5}
+.legend b{font:600 10px var(--mono);color:var(--red);border:1.5px solid var(--red);border-radius:50%;padding:1px 4px;margin-right:4px}
+
+/* ---------- desk ---------- */
+.deskcol{min-width:0}
+.empty{border:1.5px dashed rgba(245,239,224,.3);padding:52px 30px;text-align:center}
+.empty .h{font:600 27px var(--hand);color:rgba(245,239,224,.65);transform:rotate(-1.5deg)}
+.empty .s{font:400 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(245,239,224,.35);margin-top:12px}
+
+.paper{position:relative;background:var(--paper);color:var(--ink)}
+.paper::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}
+.paper>*{position:relative;z-index:1}
+
+#sheets{display:flex;flex-direction:column;gap:28px;margin-bottom:28px}
+.sheet{max-width:920px;padding:24px 28px 30px 64px;box-shadow:0 14px 30px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.35);
+  transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+#sheets .sheet:nth-child(odd){transform:rotate(-.35deg)}
+#sheets .sheet:nth-child(even){transform:rotate(.4deg)}
+#sheets .sheet:hover{transform:rotate(0) translateY(-3px)}
+.sheet header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:1.5px solid var(--ink);padding-bottom:10px;margin-bottom:16px}
+.sheet h3{font-weight:700;font-size:18px}
+.tagchip{font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--ink2);color:var(--ink2);padding:2px 6px}
+.sheet .meta{margin-left:auto;font:400 10.5px var(--mono);color:var(--ink2)}
+.pdfbtn{background:none;border:1px solid var(--ink2);color:var(--ink2);font:600 8.5px var(--mono);
+  letter-spacing:.12em;padding:3px 7px;text-transform:uppercase;transition:.15s;margin-left:6px}
+.pdfbtn:hover{border-color:var(--red);color:var(--red)}
+
+.stamp{position:absolute;top:16px;right:22px;z-index:2;font:600 11px var(--mono);letter-spacing:.12em;
+  padding:7px 11px;border:2px solid currentColor;border-radius:4px;outline:1.5px solid currentColor;outline-offset:3px;
+  transform:rotate(-7deg);animation:stampIn .5s cubic-bezier(.2,.9,.3,1.25) both;animation-delay:var(--d,0s);
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.8 -0.35'/></filter><rect width='160' height='160' filter='url(%23g)'/></svg>");
+  mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.8 -0.35'/></filter><rect width='160' height='160' filter='url(%23g)'/></svg>");}
+@keyframes stampIn{0%{opacity:0;transform:rotate(-7deg) scale(2.4)}55%{opacity:1;transform:rotate(-7deg) scale(.9)}75%{transform:rotate(-7deg) scale(1.07)}100%{transform:rotate(-7deg) scale(1)}}
+.stamp.good{color:var(--green)} .stamp.shaky{color:var(--ochre)} .stamp.lazy,.stamp.void{color:var(--red)}
+
+.qs{list-style:none}
+.q{position:relative;padding-right:118px;margin-bottom:20px}
+.qno{font:600 11px var(--mono);color:var(--red);margin-right:8px}
+.topic{font:500 8.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);border:1px solid var(--line);padding:1px 5px;margin-left:8px;vertical-align:2px}
+.stem{font-size:15.5px;line-height:1.5}
+.q.flagged .stem-text{text-decoration:underline wavy var(--red) 1.5px;text-underline-offset:4px;text-decoration-skip-ink:none}
+.choices{list-style:none;margin-top:7px}
+.choices li{display:flex;gap:9px;align-items:baseline;padding:2.5px 0;font-size:14.5px;color:var(--ink2)}
+.choices li.key{color:var(--ink)}
+.letter{font:600 11px var(--mono);flex:none;width:19px;text-align:center}
+.letter.circled{display:inline-grid;place-items:center;width:21px;height:21px;border:1.6px solid var(--red);border-radius:50%;transform:rotate(-6deg);color:var(--red)}
+.choices .ic{width:12px;height:12px;stroke:var(--green);flex:none;align-self:center}
+.pennote{position:absolute;top:4px;right:0;width:104px;text-align:right;font:600 17px var(--hand);color:var(--red);transform:rotate(-2deg);line-height:1.25}
+.sa{position:absolute;right:6px;top:0;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--red);
+  background:transparent;color:var(--red);font:600 11.5px var(--mono);transform:rotate(6deg);transition:.15s}
+.pennote~.sa{top:86px}
+.sa:hover,.sa.on{background:var(--red);color:var(--paper)}
+.sa.busy{animation:spin 1s linear infinite;opacity:.5}
+@keyframes spin{to{transform:rotate(366deg)}}
+.sa-note{margin-top:9px;padding:8px 13px;border-left:2.5px solid var(--green);background:rgba(46,107,63,.06);
+  font:600 20px var(--hand);color:#2c5c38;line-height:1.3;transform:rotate(-.4deg)}
+.sa-note .sa-tag{display:inline-grid;place-items:center;width:23px;height:23px;border:1.5px solid currentColor;border-radius:50%;
+  font:600 9.5px var(--mono);transform:rotate(-8deg);margin-right:9px;vertical-align:6px}
+.sa-note.bad{border-left-color:var(--red);color:var(--red)}
+.voidnote{font-style:italic;font-size:14.5px;color:var(--ink2)}
+.reforming{font:600 20px var(--hand);color:var(--red);transform:rotate(-1.5deg);margin-top:4px}
+
+/* ---------- ledger ---------- */
+.ledger{max-width:920px;padding:20px 24px 16px 64px;box-shadow:0 14px 30px rgba(0,0,0,.45)}
+.ledger .lhead{display:flex;align-items:baseline;border-bottom:1.5px solid var(--ink);padding-bottom:9px;margin-bottom:6px}
+.ledger h3{font-weight:700;font-size:17px}
+.btn2{margin-left:auto;font:600 9.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;
+  border:1.5px solid var(--ink);background:none;color:var(--ink);padding:6px 11px}
+.btn2:hover{background:var(--ink);color:var(--paper)}
+.lgrid{font:400 11.5px var(--mono)}
+.lrow,.lheadrow{display:grid;grid-template-columns:46px 66px 38px 1fr 52px 66px;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);align-items:baseline}
+.lheadrow{font:600 8.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);border-bottom:1px solid var(--ink)}
+.lrow .ded{color:var(--red)}
+.lrow .sc{text-align:right;font-weight:600}
+.lrow .vd{font-weight:600}
+.lrow .vd.good{color:var(--green)} .lrow .vd.shaky{color:var(--ochre)} .lrow .vd.lazy,.lrow .vd.void{color:var(--red)}
+.lempty{font:italic 400 12px var(--serif);color:var(--ink2);padding:10px 0}
+#ledgerFoot{border-top:2px solid var(--ink);margin-top:2px;padding-top:8px;font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
+#ledgerFoot b{color:var(--red)}
+
+/* ---------- report ---------- */
+.report{max-width:920px;margin-top:28px;padding:26px 28px 30px 64px;box-shadow:0 14px 30px rgba(0,0,0,.45)}
+.report h2{font-weight:900;font-size:26px;letter-spacing:-.3px}
+.report .rsub{font:italic 400 13px var(--serif);color:var(--ink2);margin:4px 0 18px}
+.rgrid{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
+.rrows{flex:1;min-width:300px;font:400 12px var(--mono)}
+.rrow{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px dotted var(--line)}
+.rrow .k{color:var(--ink2)}
+.rrow .v{text-align:right;font-weight:500}
+.rrow .v .rd{color:var(--red);font-weight:600}
+.gstamp{font-family:var(--mono);border:3px solid currentColor;border-radius:6px;outline:2px solid currentColor;outline-offset:4px;
+  padding:12px 20px;transform:rotate(-6deg);text-align:center;animation:stampIn .55s cubic-bezier(.2,.9,.3,1.25) .3s both;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.8 -0.35'/></filter><rect width='160' height='160' filter='url(%23g)'/></svg>");
+  mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.8 -0.35'/></filter><rect width='160' height='160' filter='url(%23g)'/></svg>");}
+.gstamp b{display:block;font:900 46px var(--serif);line-height:1}
+.gstamp i{font-style:normal;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase}
+.gstamp.gA{color:var(--green)} .gstamp.gB{color:var(--ink)} .gstamp.gC{color:var(--ochre)} .gstamp.gD{color:var(--red)}
+.finstr{font:italic 400 13px var(--serif);color:var(--ink2);border-top:1.5px solid var(--ink);border-bottom:1.5px solid var(--ink);padding:9px 0;margin:16px 0 14px}
+.keywrap{margin-top:22px;border-top:1.5px dashed var(--line);padding-top:14px}
+.keywrap h4{font:600 10px var(--mono);letter-spacing:.18em;text-transform:uppercase}
+.keyhead{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.keyhead .btn2{margin-left:0}
+#keyList{font:400 12px var(--mono);line-height:2;transition:filter .3s}
+#keyList.blurred{filter:blur(7px);user-select:none}
+
+.release-bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1.5px dashed var(--line)}
+.release-bar .btn2{margin-left:0;border-color:var(--red);color:var(--red)}
+.release-bar .btn2:hover{background:var(--red);color:var(--paper)}
+.release-bar .btn2:disabled{opacity:.45;cursor:not-allowed}
+.release-bar .spacer{flex:1}
+.release-note{font:italic 400 11px var(--serif);color:var(--ink2);align-self:center}
+
+/* ---------- slips ---------- */
+#toasts{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:99;display:flex;flex-direction:column;gap:8px;align-items:center}
+.slip{background:var(--paper);color:var(--ink);border-left:3px solid var(--ink);padding:10px 18px;font:400 12px var(--mono);
+  box-shadow:0 10px 26px rgba(0,0,0,.5);opacity:0;transform:translateY(10px);transition:.3s;max-width:min(560px,90vw)}
+.slip.on{opacity:1;transform:none}
+.slip.red{border-left-color:var(--red)} .slip.green{border-left-color:var(--green)}
+
+/* ---------- pdf clean-up for html2canvas ---------- */
+.pdf-clean{box-shadow:none!important;transform:none!important;animation:none!important;transition:none!important}
+.pdf-clean::after{display:none!important}
+.pdf-clean .sa,.pdf-clean .reforming,.pdf-clean .no-print,.pdf-clean .pdfbtn{display:none!important}
+.pdf-clean .stamp,.pdf-clean .gstamp{animation:none!important;-webkit-mask-image:none!important;mask-image:none!important}
+.pdf-clean #keyList.blurred{filter:none!important;user-select:auto!important}
+
+.ic{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+@media (max-width:960px){
+  main{grid-template-columns:1fr;padding:26px 18px 70px}
+  .masthead{padding:24px 18px 16px}
+  .ticket{transform:none}
+  .q{padding-right:0}
+  .pennote,.sa{position:static;transform:none;width:auto;text-align:left}
+  .pennote{margin-top:6px}
+  .sa{margin-top:10px;display:inline-grid;place-items:center}
+  .stamp{top:10px;right:12px}
+  .lrow,.lheadrow{grid-template-columns:40px 56px 32px 1fr 44px 58px;font-size:10px}
+}
+@media print{
+  body{background:#fff}
+  body *{visibility:hidden}
+  #finalPaper,#finalPaper *{visibility:visible}
+  #finalPaper{position:fixed;inset:0;box-shadow:none;transform:none;background:#fff;padding:26px 34px}
+  #finalPaper .no-print{display:none!important}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></symbol>
+  <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9 4h6v5.5c0 2.5 3.5 2.5 3.5 6H5.5c0-3.5 3.5-3.5 3.5-6z"/><path d="M5 19.5h14v2H5z"/></symbol>
+</svg>
+
+<header class="masthead">
+  <div>
+    <h1><em>The</em> Examination Forge</h1>
+    <div class="sub">document <b>—</b> trial papers <b>—</b> the warden grades every try <b>—</b> laziness is penalized</div>
+  </div>
+  <div class="meter">
+    <div class="t">Token desk</div>
+    context ≈<b id="mCtx">0</b> · output ≈<b id="mOut">0</b> → <b id="mReq">0</b>/request · spent <b class="red" id="mSpent">0</b>
+  </div>
+</header>
+
+<main>
+  <!-- ============ JOB TICKET ============ -->
+  <aside class="ticket">
+    <div class="holes"><span></span><span></span></div>
+
+    <div class="t-label">1 · Source document</div>
+    <div id="dz">
+      <svg class="ic"><use href="#i-doc"/></svg>
+      <div class="big">Drop PDFs · DOCX · TXT · PNG here</div>
+      <div class="tiny">or click to browse — drop several to build a corpus<br>text is pulled out on this desk, never uploaded anywhere else</div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.bmp">
+    <div id="fileMeta"></div>
+    <div class="ocrbar" id="ocrBar"><i></i></div>
+
+    <div class="sect">
+      <div class="t-label">2 · The hand that writes</div>
+      <div class="seg" id="provSeg">
+        <button data-p="openrouter" class="on">OPENROUTER</button>
+        <button data-p="gemini">GEMINI</button>
+        <button data-p="ollama">OLLAMA</button>
+        <button data-p="local">LOCAL</button>
+      </div>
+      <div id="pFields"></div>
+      <label class="hint" style="display:block;margin-top:12px;cursor:pointer">
+        <input type="checkbox" id="remember" style="vertical-align:-2px;margin-right:6px"> remember keys on this desk
+      </label>
+    </div>
+
+    <div class="sect">
+      <div class="t-label">3 · Token thrift</div>
+      <label class="ballot">
+        <input type="checkbox" id="thrift" checked>
+        <span><span class="bt">Token Thrift — ON</span>
+        <div class="bs">Terse system prompt, capped output, source condensed to its highest-weight sentences. Off = richer prompts, wider context, pricier run.</div></span>
+      </label>
+      <div id="budgetRow">
+        <output id="budgetOut"></output>
+        <input type="range" id="budget" min="800" max="8000" step="200" value="2400">
+        <div id="condLine"></div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="t-label">4 · The run</div>
+      <div class="duo">
+        <div class="step"><div class="lab">Tries (X)</div>
+          <div class="stepper" id="stTries"><button class="minus">−</button><span class="sv">3</span><button class="plus">+</button></div>
+        </div>
+        <div class="step"><div class="lab">Questions / try</div>
+          <div class="stepper" id="stQ"><button class="minus">−</button><span class="sv">5</span><button class="plus">+</button></div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>Difficulty</label>
+        <select id="diff">
+          <option value="recall">Recall only</option>
+          <option value="mixed" selected>Mixed</option>
+          <option value="applied">Applied &amp; reasoning</option>
+        </select>
+      </div>
+      <button id="forgeBtn" disabled><svg class="ic"><use href="#i-stamp"/></svg><span>Forge the examination</span></button>
+      <div id="forgeStatus">load a document to begin</div>
+      <div class="legend"><b>SA</b> sits on every question — one press stamps a plain-language explanation next to it. No code, no jargon.</div>
+    </div>
+  </aside>
+
+  <!-- ============ THE DESK ============ -->
+  <section class="deskcol" id="deskcol">
+    <div class="empty" id="emptyNote">
+      <div class="h">Drop a document on the ticket — the warden is watching.</div>
+      <div class="s">every try gets stamped · every lazy paper pays points · results at the end</div>
+    </div>
+    <div id="sheets"></div>
+
+    <article class="ledger paper" id="ledger">
+      <div class="lhead"><h3>Mark Book</h3><button class="btn2" id="clearDesk">clear desk</button></div>
+      <div class="lgrid">
+        <div class="lheadrow"><span>Nº</span><span>Kind</span><span>Q</span><span>Deductions</span><span style="text-align:right">Score</span><span>Verdict</span></div>
+        <div id="ledgerBody"><div class="lempty">— no trials graded yet —</div></div>
+      </div>
+      <div id="ledgerFoot">papers 0 · penalties <b>−0</b> · lazy caught 0</div>
+    </article>
+  </section>
+</main>
+
+<div id="toasts"></div>
+
+<script>
+/* ================= helpers ================= */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const clip=(s,n)=>s&&s.length>n?s.slice(0,n-1)+'…':(s||'');
+const norm=s=>String(s||'').toLowerCase().replace(/\s+/g,' ').trim();
+const cap1=s=>s? s.charAt(0).toUpperCase()+s.slice(1):s;
+const fmtK=n=>n>=1000?(n/1000).toFixed(1)+'k':String(Math.round(n));
+const fmtMs=ms=>ms<1000?Math.round(ms)+'ms':(ms/1000).toFixed(1)+'s';
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function shuffle(a,rng){const x=a.slice();for(let i=x.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[x[i],x[j]]=[x[j],x[i]];}return x;}
+function uniqBy(a,f){const seen=new Set();return a.filter(x=>{const k=f(x);if(seen.has(k))return false;seen.add(k);return true;});}
+const CHECK='<svg class="ic"><use href="#i-check"/></svg>';
+const CLOSE='<svg class="ic"><use href="#i-x"/></svg>';
+
+const STOP=new Set(('the a an of to in and or is are was were be been being for on at as by with from that this these those it its their his her '+
+'my your we our you i he she they them there here which who whom whose what when where how why not no nor but if into over under about after before '+
+'between during through above below up down out off again further once all any both each few more most other some such only own same so too very just '+
+'don now can could should would may might will shall must do does did done than then also because while across per via according best statement '+
+'statements describes description source appear appears used term fit fits').split(' '));
+function words(s){return (String(s||'').toLowerCase().match(/[a-z0-9']+/g)||[]).filter(w=>w.length>2&&!STOP.has(w));}
+function jaccard(a,b){const A=new Set(a),B=new Set(b);if(!A.size||!B.size)return 0;let i=0;A.forEach(w=>{if(B.has(w))i++;});return i/(A.size+B.size-i);}
+function ngrams(text,n){const w=text.toLowerCase().match(/[a-z0-9']+/g)||[];const s=new Set();
+  for(let i=0;i+n<=w.length;i++)s.add(w.slice(i,i+n).join(' '));return s;}
+function sentenceSplit(text){return (String(text).replace(/\s+/g,' ').match(/[^.!?…]+[.!?…]+["')\]]*|[^.!?…]+$/g)||[]).map(s=>s.trim()).filter(Boolean);}
+function tfMap(text){const m=new Map();words(text).forEach(w=>m.set(w,(m.get(w)||0)+1));return m;}
+
+/* ================= state ================= */
+const state={files:[],text:'',provider:'openrouter',thrift:true,budget:2400,
+  triesWanted:3,qCount:5,runs:[],replacedN:new Set(),spent:0,running:false,forgeN:0};
+let srcGrams=null;
+let cfg={};try{cfg=JSON.parse(localStorage.getItem('forge.cfg')||'{}');}catch(e){}
+
+/* ---------- memoized condensate + doc stats ---------- */
+let _cond={key:'',val:''};
+function getCondensed(){
+  const key=state.thrift+'\u0000'+state.budget+'\u0000'+state.text.length+'\u0000'+(state.text?hashStr(state.text):0);
+  if(_cond.key===key)return _cond.val;
+  let val='';
+  if(state.text){
+    val=state.thrift?condense(state.text,state.budget):state.text.slice(0,12000);
+  }
+  _cond={key,val};
+  return val;
+}
+function resetCondCache(){_cond={key:'',val:''};}
+let _docStats={text:null,chars:0,words:0,tokens:0};
+function getDocStats(){
+  if(_docStats.text===state.text)return _docStats;
+  const t=state.text||'';
+  _docStats={text:t,chars:t.length,words:(t.match(/\S+/g)||[]).length,tokens:Math.ceil(t.length/4)};
+  return _docStats;
+}
+
+/* ================= slips ================= */
+function slip(msg,kind){const el=document.createElement('div');el.className='slip '+(kind||'');el.textContent=msg;
+  $('#toasts').appendChild(el);requestAnimationFrame(()=>el.classList.add('on'));
+  setTimeout(()=>{el.classList.remove('on');setTimeout(()=>el.remove(),350);},4200);}
+
+/* ================= lazy script loading ================= */
+const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFWK='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const MAMMOTH='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+const TESS='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
+const JSPDF_SRC='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+const H2C_SRC='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+const _sc={};
+function loadScript(src){if(_sc[src])return _sc[src];_sc[src]=new Promise((res,rej)=>{
+  const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('could not load '+src));
+  document.head.appendChild(s);});return _sc[src];}
+
+/* ================= extraction ================= */
+function setOcr(p){const b=$('#ocrBar');b.style.display=p==null?'none':'block';b.querySelector('i').style.width=Math.round(p*100)+'%';}
+async function extractText(file,onProg){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  if(ext==='txt'||ext==='md'||file.type.startsWith('text/'))
+    return {text:await file.text(),method:'PLAIN TEXT'};
+  if(ext==='pdf'||file.type==='application/pdf'){
+    await loadScript(PDFJS);
+    if(window.pdfjsLib.GlobalWorkerOptions.workerSrc!=='') window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFWK;
+    const buf=new Uint8Array(await file.arrayBuffer());
+    const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+    const pages=Math.min(pdf.numPages,60);const out=[];
+    for(let i=1;i<=pages;i++){onProg&&onProg(i/pages,'page '+i+'/'+pages);
+      const pg=await pdf.getPage(i);const tc=await pg.getTextContent();
+      out.push(tc.items.map(it=>it.str).join(' '));}
+    return {text:out.join('\n\n'),method:'PDF.JS · '+pages+' pg'};
+  }
+  if(ext==='docx'||ext==='doc'||file.type.includes('wordprocessing')){
+    await loadScript(MAMMOTH);
+    try{const r=await window.mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
+      return {text:r.value,method:'MAMMOTH'};}
+    catch(e){throw new Error('Legacy .doc can’t be opened in-browser — save it as .docx or .txt');}
+  }
+  if(['png','jpg','jpeg','webp','bmp'].includes(ext)||file.type.startsWith('image/')){
+    await loadScript(TESS);
+    const worker=await window.Tesseract.createWorker('eng',1,{logger:m=>{
+      if(m.status==='recognizing text'&&m.progress!=null)onProg&&onProg(m.progress,'reading ink '+Math.round(m.progress*100)+'%');}});
+    try{const {data}=await worker.recognize(file);return {text:data.text,method:'TESSERACT OCR'};}
+    finally{await worker.terminate();}
+  }
+  throw new Error('Unsupported format: '+ext);
+}
+
+const COMBINED_CAP=300000;
+async function addFiles(fileList){
+  const files=[...fileList];
+  if(!files.length)return;
+  let added=0,rejected=0;
+  for(const file of files){
+    if(file.size>25e6){slip(file.name+' is over 25 MB — skipped.','red');rejected++;continue;}
+    if(state.files.some(f=>f.name===file.name&&f.size===file.size)){
+      slip(file.name+' is already on the desk.','red');rejected++;continue;}
+    $('#forgeStatus').textContent='extracting '+clip(file.name,32)+'…';
+    try{
+      const {text,method}=await extractText(file,(p,msg)=>{setOcr(p);$('#forgeStatus').textContent='extracting — '+msg;});
+      setOcr(null);
+      const clean=String(text).replace(/\u0000/g,'').trim();
+      if(clean.length<40){slip(file.name+': almost no readable text.','red');rejected++;continue;}
+      state.files.push({name:file.name,size:file.size,text:clean,method});
+      added++;
+    }catch(e){
+      slip(file.name+': '+e.message,'red');rejected++;setOcr(null);
+    }
+  }
+  combineFiles();
+  if(added) slip('Added '+added+' file'+(added>1?'s':'')+'. Source corpus now '+
+    fmtK(getDocStats().tokens)+' tokens across '+state.files.length+' file'+(state.files.length>1?'s':'')+'.','green');
+}
+function combineFiles(){
+  if(!state.files.length){
+    state.text='';
+    $('#fileMeta').innerHTML='';
+    $('#forgeBtn').disabled=true;
+    $('#forgeStatus').textContent='load a document to begin';
+    resetCondCache();updateMeter();return;
+  }
+  let combined=state.files.map(f=>f.text).join('\n\n———\n\n');
+  if(combined.length>COMBINED_CAP){
+    combined=combined.slice(0,COMBINED_CAP);
+    slip('Combined source clipped to 300k characters.','red');
+  }
+  state.text=combined;
+  resetCondCache();
+  renderFileMeta();
+  updateMeter();
+  $('#forgeBtn').disabled=false;
+  $('#forgeStatus').textContent='ready — the warden is watching';
+}
+function removeFile(idx){
+  if(idx<0||idx>=state.files.length)return;
+  const removed=state.files.splice(idx,1)[0];
+  combineFiles();
+  slip('Removed '+removed.name+'.','green');
+}
+function renderFileMeta(){
+  if(!state.files.length){$('#fileMeta').innerHTML='';return;}
+  const s=getDocStats();
+  let html='<div id="fileList">';
+  state.files.forEach((f,i)=>{
+    const fTok=Math.ceil(f.text.length/4);
+    html+='<div class="fitem">'+
+      '<div class="fi-name"><b>'+esc(f.name)+'</b>'+
+      '<span class="fi-meta">'+esc(f.method)+' · ≈'+fmtK(fTok)+' tok</span></div>'+
+      '<button class="rmOne" data-i="'+i+'" title="remove">'+CLOSE+'</button>'+
+      '</div>';
+  });
+  html+='</div>';
+  html+='<div class="ftotal"><span>'+state.files.length+' file'+(state.files.length>1?'s':'')+'</span>'+
+        '<span>≈'+fmtK(s.tokens)+' tok · '+s.words.toLocaleString()+' words</span></div>';
+  $('#fileMeta').innerHTML=html;
+  $$('#fileMeta .rmOne').forEach(b=>b.onclick=()=>removeFile(+b.dataset.i));
+}
+
+/* dropzone */
+const dz=$('#dz');
+dz.addEventListener('click',()=>$('#fileInput').click());
+ $('#fileInput').addEventListener('change',e=>{addFiles(e.target.files);e.target.value='';});
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');addFiles(e.dataTransfer.files);});
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>e.preventDefault());
+
+/* ================= condenser ================= */
+function condense(text,budget){
+  if(text.length<=budget)return text;
+  const sents=sentenceSplit(text);const tf=tfMap(text);
+  const scored=[];
+  sents.forEach((s,i)=>{const w=words(s);if(!w.length)return;
+    let sc=0;w.forEach(x=>sc+=tf.get(x)||0);scored.push({i,s,sc:sc/Math.sqrt(w.length+4)});});
+  scored.sort((a,b)=>b.sc-a.sc);
+  const chosen=[];let len=0;
+  for(const x of scored){if(len+x.s.length>budget)continue;chosen.push(x);len+=x.s.length+1;if(len>=budget*0.98)break;}
+  chosen.sort((a,b)=>a.i-b.i);
+  let out=chosen.map(x=>x.s).join(' ');
+  if(out.length<50)out=text.slice(0,budget);
+  return out;
+}
+
+/* ================= providers ================= */
+function renderProviderFields(){
+  const M=cfg.models||{},K=cfg.keys||{},w=$('#pFields');
+  if(state.provider==='openrouter')w.innerHTML=
+    '<div class="field"><label>API key</label><input id="orKey" type="password" placeholder="sk-or-…" value="'+esc(K.orKey||'')+'"></div>'+
+    '<div class="field"><label>Model</label><input id="orModel" type="text" value="'+esc(M.orModel||'openai/gpt-4o-mini')+'"></div>'+
+    '<p class="hint">Key stays in this browser. Free-tier models are plenty for this job.</p>';
+  else if(state.provider==='gemini')w.innerHTML=
+    '<div class="field"><label>API key</label><input id="gmKey" type="password" placeholder="AIza…" value="'+esc(K.gmKey||'')+'"></div>'+
+    '<div class="field"><label>Model</label><input id="gmModel" type="text" value="'+esc(M.gmModel||'gemini-2.0-flash')+'"></div>'+
+    '<p class="hint">Free keys at aistudio.google.com — calls go straight from this page.</p>';
+  else if(state.provider==='ollama')w.innerHTML=
+    '<div class="field"><label>Base URL</label><input id="olBase" type="text" value="'+esc(M.olBase||'http://localhost:11434')+'"></div>'+
+    '<div class="field"><label>Model</label><input id="olModel" type="text" value="'+esc(M.olModel||'llama3.2')+'"></div>'+
+    '<p class="hint">Start it with <code>OLLAMA_ORIGINS="*" ollama serve</code> so this page may speak to it. Zero cost, fully local.</p>';
+  else w.innerHTML='<p class="hint">No network at all — the <b>Drill Sergeant</b> writes cloze and recall items straight out of your text. Zero tokens, instant, and the warden grades it exactly the same.</p>';
+  w.querySelectorAll('input').forEach(i=>i.addEventListener('change',saveCfg));
+}
+/* Always capture the current fields into memory. Persist keys only when remembered. */
+function captureFields(){
+  cfg.provider=state.provider;cfg.thrift=state.thrift;cfg.budget=state.budget;
+  cfg.tries=state.triesWanted;cfg.q=state.qCount;cfg.diff=$('#diff').value;
+  cfg.remember=$('#remember').checked;cfg.models=cfg.models||{};cfg.keys=cfg.keys||{};
+  ['orModel','gmModel','olModel','olBase'].forEach(id=>{const el=$('#'+id);if(el)cfg.models[id]=el.value;});
+  ['orKey','gmKey'].forEach(id=>{const el=$('#'+id);if(el)cfg.keys[id]=el.value;});
+}
+let _saveT=null;
+function saveCfg(){if(_saveT)clearTimeout(_saveT);_saveT=setTimeout(writeCfg,220);}
+function writeCfg(){
+  try{
+    captureFields();
+    const toSave=JSON.parse(JSON.stringify(cfg));
+    if(!cfg.remember)toSave.keys={};
+    localStorage.setItem('forge.cfg',JSON.stringify(toSave));
+  }catch(e){}
+}
+$('#remember').checked=!!cfg.remember;
+
+function providerReady(){
+  if(state.provider==='openrouter'&&!($('#orKey')&&$('#orKey').value.trim()))return 'OpenRouter needs an API key.';
+  if(state.provider==='gemini'&&!($('#gmKey')&&$('#gmKey').value.trim()))return 'Gemini needs an API key.';
+  return null;}
+function modelLabel(){
+  if(state.provider==='openrouter')return ($('#orModel')&&$('#orModel').value.trim())||'openai/gpt-4o-mini';
+  if(state.provider==='gemini')return ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-2.0-flash';
+  if(state.provider==='ollama')return ($('#olModel')&&$('#olModel').value.trim())||'llama3.2';
+  return 'drill sergeant';}
+
+async function chat(sys,usr,temp,maxTok){
+  const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),60000);
+  try{
+    if(state.provider==='openrouter'){
+      const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{signal:ctl.signal,method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+$('#orKey').value.trim()},
+        body:JSON.stringify({model:modelLabel(),messages:[{role:'system',content:sys},{role:'user',content:usr}],temperature:temp,max_tokens:maxTok})});
+      const d=await r.json();if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));
+      return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
+    }
+    if(state.provider==='gemini'){
+      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(modelLabel())+':generateContent?key='+encodeURIComponent($('#gmKey').value.trim()),
+        {signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:usr}]}],
+          generationConfig:{temperature:temp,maxOutputTokens:maxTok}})});
+      const d=await r.json();if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));
+      return ((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('');
+    }
+    if(state.provider==='ollama'){
+      const base=(($('#olBase').value||'http://localhost:11434').trim()).replace(/\/+$/,'');
+      const r=await fetch(base+'/api/chat',{signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:modelLabel(),messages:[{role:'system',content:sys},{role:'user',content:usr}],
+          stream:false,options:{temperature:temp,num_predict:maxTok}})});
+      const d=await r.json();if(!r.ok)throw new Error(typeof d.error==='string'?d.error:('HTTP '+r.status));
+      return (d.message&&d.message.content)||'';
+    }
+    throw new Error('No network provider selected.');
+  }finally{clearTimeout(to);}
+}
+
+/* ================= local drill sergeant ================= */
+function makeCloze(s,t){return 'Fill the gap from the source: “'+s.replace(t,'______')+'”';}
+function localGenerate(count,prevStems,seed){
+  const rng=mulberry32(seed);
+  const full=state.text;
+  const sents=sentenceSplit(full).map(s=>s.replace(/\s+/g,' ').trim()).filter(s=>s.length>=60&&s.length<=260);
+  const tf=tfMap(full);
+  const capWords={};
+  sents.forEach(s=>{const toks=s.split(/\s+/);toks.forEach((t,i)=>{
+    const w=t.replace(/[^A-Za-z-]/g,'');
+    if(i>0&&/^[A-Z]/.test(w)&&w.length>=5&&!STOP.has(w.toLowerCase()))capWords[w]=(capWords[w]||0)+1;});});
+  const capPool=Object.keys(capWords).sort((a,b)=>capWords[b]-capWords[a]);
+  const numPool=[...new Set(full.match(/\b\d[\d,]*(?:\.\d+)?\b/g)||[])].filter(x=>x.replace(/\D/g,'').length>=2);
+  const defPreds=[];const dre=/([A-Z][A-Za-z-]+(?:\s+[A-Za-z][a-z-]+){0,2})\s+(?:is|are|was|were|means|refers to)\s+([^.;:]{25,150})[.;]/g;
+  let m;while((m=dre.exec(full))&&defPreds.length<40)defPreds.push({term:m[1].trim(),pred:m[2].trim().replace(/[,;\s]+$/,'')});
+  const cands=[];
+  defPreds.forEach(d=>cands.push({kind:'def',q:'Which description fits “'+d.term+'” as used in the source?',
+    correct:cap1(d.pred),wrongs:defPreds.filter(o=>o!==d).map(o=>cap1(o.pred)),key:d.term.toLowerCase()}));
+  const sh=sents.slice();for(let i=sh.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[sh[i],sh[j]]=[sh[j],sh[i]];}
+  let negUsed=false;
+  for(const s of sh){
+    if(cands.length>=count*6)break;
+    const toksArr=s.split(/\s+/);const wc=toksArr.length;
+    const toks=s.match(/[A-Za-z][A-Za-z-]{4,}/g)||[];
+    const idxOf=t=>{let i=0;for(let k=0;k<toksArr.length;k++){if(toksArr[k].indexOf(t)===0){i=k;break;}}return i;};
+    const num=(wc<=24&&numPool.length>=4)?(s.match(/\b\d[\d,]*(?:\.\d+)?\b/)||[null])[0]:null;
+    if(num){
+      const i=toksArr.findIndex(t=>t.indexOf(num)===0);
+      if(i>=1&&i<16&&(wc-i)<16)cands.push({kind:'cloze',q:makeCloze(s,num),correct:num,number:true,key:num});
+    }
+    const caps=toks.filter(t=>/^[A-Z]/.test(t)&&capPool.indexOf(t)>=0&&!s.startsWith(t));
+    let term=null;
+    if(caps.length&&wc<=26)term=caps[0];
+    else{const r=toks.filter(t=>!STOP.has(t.toLowerCase())).sort((a,b)=>((tf.get(a.toLowerCase())||0)-(tf.get(b.toLowerCase())||0)))[0];
+      if(r&&r.length>=6&&wc<=26)term=r;}
+    if(term){const i=idxOf(term);if(i>=1&&i<16&&(wc-i)<16)cands.push({kind:'cloze',q:makeCloze(s,term),correct:term,key:term.toLowerCase()});}
+    if(!negUsed&&wc>=14&&caps.length){
+      const t=caps[0];
+      const fake=capPool.find(x=>x.toLowerCase()!==t.toLowerCase()&&Math.abs(x.length-t.length)<=3&&s.indexOf(x)===-1);
+      if(fake){
+        const parts=s.split(t);
+        const recombined=parts[0]+fake+(parts.length>1?parts.slice(1).join(t):'');
+        cands.push({kind:'neg',q:'Which of these does NOT appear in the source?',
+          correct:cap1(recombined).slice(0,150),
+          wrongs:sents.filter(o=>o!==s&&o.length<=150).map(o=>cap1(o)),key:fake});
+        negUsed=true;
+      }
+    }
+  }
+  const picked=[],negPicked=[];
+  const tryPush=c=>{
+    if(picked.length>=count)return;
+    if(c.kind==='neg'&&negPicked.length)return;
+    const ws=words(c.q);
+    if(picked.some(p=>jaccard(words(p.q),ws)>=0.6))return;
+    if(prevStems.some(ps=>jaccard(words(ps),ws)>=0.7))return;
+    let wrongs=uniqBy((c.wrongs||[]).filter(w=>w&&norm(w)!==norm(c.correct)).map(w=>clip(w,160)),norm);
+    if(wrongs.length<3){
+      if(c.number){const base=parseFloat(String(c.correct).replace(/,/g,''))||0;const extra=[];
+        for(let k=1;extra.length+wrongs.length<3&&k<12;k++){
+          const v=base*(1+(rng()<.5?-1:1)*(0.12*k+0.04));
+          extra.push(Math.abs(v)>=100?String(Math.round(v)):v.toFixed(Math.abs(v)>=10?1:2));}
+        wrongs=wrongs.concat(extra);}
+      else{const alt=capPool.concat([...tf.keys()].filter(w=>w.length>=6))
+          .filter(w=>w.toLowerCase()!==c.key&&Math.abs(w.length-(c.correct||'').length)<=4);
+        wrongs=wrongs.concat(shuffle(uniqBy(alt,norm),rng).slice(0,3-wrongs.length).map(cap1));}
+    }
+    wrongs=uniqBy(wrongs,norm);
+    if(wrongs.length<3)return;
+    const choices=shuffle([clip(c.correct,180),...wrongs.slice(0,3)],rng);
+    picked.push({q:c.q,choices,answer:choices.findIndex(x=>norm(x)===norm(c.correct)),
+      topic:c.kind==='def'?'definition':c.kind==='neg'?'source check':'recall'});
+    if(c.kind==='neg')negPicked.push(1);
+  };
+  shuffle(cands,rng).forEach(tryPush);
+  if(!picked.length){
+    const top=[...tf.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>cap1(e[0]));
+    if(top.length>=4)picked.push({q:'Which term carries the greatest weight in this source?',
+      choices:shuffle(top,rng),answer:0,topic:'recall'});
+  }
+  return picked;
+}
+
+/* ================= parsing ================= */
+function toIdx(ans,ch){
+  if(typeof ans==='number'&&ans>=0&&ans<ch.length)return ans;
+  if(typeof ans==='string'){const s=ans.trim();
+    if(/^\d+$/.test(s)){const i=+s-1;if(i>=0&&i<ch.length)return i;}
+    const i='abcdefg'.indexOf(s.toLowerCase());if(i>=0&&i<ch.length)return i;
+    const j=ch.findIndex(c=>norm(c)===norm(s));if(j>=0)return j;}
+  return -1;}
+function normList(arr){
+  const out=[];
+  for(const it of arr||[]){
+    if(!it||typeof it!=='object')continue;
+    let ch=it.choices||it.options||it.answers;
+    if(!Array.isArray(ch))continue;
+    ch=ch.map(c=>String(c)).filter(c=>c.trim().length);
+    if(ch.length<2||!it.q)continue;
+    const ansRaw = it.answer!=null ? it.answer : (it.correct!=null ? it.correct : it.correctIndex);
+    out.push({q:String(it.q).trim(),choices:ch.slice(0,6),answer:toIdx(ansRaw,ch),topic:String(it.topic||'').trim()});
+  }
+  return out;
+}
+function parseLines(t){
+  const out=[];const blocks=String(t).split(/\n(?=\s*\d+\s*[.)])/);
+  for(const b of blocks){
+    const lines=b.split('\n').map(x=>x.trim()).filter(Boolean);
+    if(lines.length<4)continue;
+    const stem=lines[0].replace(/^\s*\d+\s*[.)]\s*/,'');
+    const ch=[];let ans=-1;
+    for(const ln of lines.slice(1)){
+      const cm=ln.match(/^([A-Fa-f])[).:]\s*(.+)$/);if(cm)ch.push(cm[2].trim());
+      const am=ln.match(/answer\s*[:\-]?\s*([A-Fa-f]|\d+)\b/i);
+      if(am){const s=am[1];ans=/^\d+$/.test(s)?+s-1:'abcdef'.indexOf(s.toLowerCase());}}
+    if(stem.length>15&&ch.length>=3&&ans>=0&&ans<ch.length)out.push({q:stem,choices:ch,answer:ans,topic:''});}
+  return out;}
+function parseQuestions(raw){
+  let t=String(raw||'').replace(/```[a-z]*/gi,'').replace(/```/g,'').trim();
+  const m=t.match(/\[[\s\S]*\]/);
+  if(m){try{const arr=normList(JSON.parse(m[0]));if(arr.length)return arr;}catch(e){}}
+  const m2=t.match(/\{[\s\S]*\}/);
+  if(m2){try{const o=JSON.parse(m2[0]);const a=o.questions||o.exam||o.items;
+    if(Array.isArray(a)){const arr=normList(a);if(arr.length)return arr;}}catch(e){}}
+  return parseLines(t);}
+
+/* ================= the warden ================= */
+function auditTry(questions,wanted,prevStems){
+  const t0=performance.now();
+  const items=[];const flags=questions.map(()=>[]);let score=100;
+  const pen=(code,detail,pts,qis)=>{items.push({code,detail,pts});(qis||[]).forEach(qi=>{if(flags[qi])flags[qi].push({code,pts});});};
+  if(!questions.length){items.push({code:'E1',detail:'no parsable questions',pts:40});
+    return {score:0,verdict:'LAZY',items,ms:fmtMs(performance.now()-t0)};}
+  const miss=wanted-questions.length;
+  if(miss>0)pen('E2','short '+miss+' of '+wanted,10*Math.min(miss,4),[]);
+  const stems=questions.map(q=>String(q.q||''));
+  const sets=stems.map(s=>words(s));
+  questions.forEach((q,i)=>{
+    const stem=stems[i];const ch=Array.isArray(q.choices)?q.choices:[];
+    if(stem.trim().length<40)pen('E3','Q'+(i+1)+' stem is thin',4,[i]);
+    if(ch.length<3||!(q.ansIdx>=0&&q.ansIdx<ch.length))pen('E6','Q'+(i+1)+' key is broken',10,[i]);
+    if(/lorem|\bxxx\b|\[insert|placeholder|\btbd\b/i.test(stem+' '+ch.join(' ')))pen('E8','Q'+(i+1)+' placeholder text',15,[i]);
+    if(srcGrams){
+      const g=ngrams(stem.replace(/_{2,}/g,' gap '),16);let hits=0;
+      g.forEach(x=>{if(srcGrams.has(x))hits++;});
+      if(hits>=1)pen('E5','Q'+(i+1)+' photocopied from source',10,[i]);}
+  });
+  for(let i=0;i<questions.length;i++)for(let j=i+1;j<questions.length;j++){
+    if(sets[i].length&&jaccard(sets[i],sets[j])>=0.65)pen('E4','Q'+(i+1)+' ≈ Q'+(j+1)+' duplicate',8,[i,j]);}
+  const echo=new Set();
+  sets.forEach((ws,i)=>{if(echo.has(i))return;
+    for(const ps of prevStems){if(jaccard(ws,words(ps))>=0.7){echo.add(i);pen('E9','Q'+(i+1)+' echoes an earlier try',6,[i]);break;}}});
+  const valid=questions.map(q=>q.ansIdx).filter(x=>x>=0);
+  if(questions.length>=3&&valid.length===questions.length&&new Set(valid).size===1)
+    pen('E7','all keys on one letter',6,questions.map((_,i)=>i));
+  score=Math.max(0,Math.min(100,100-items.reduce((s,i)=>s+i.pts,0)));
+  const verdict=score>=88?'GOOD':score>=70?'SHAKY':'LAZY';
+  questions.forEach((q,i)=>q._flags=flags[i].map(f=>f.code+' −'+f.pts));
+  return {score,verdict,items,ms:fmtMs(performance.now()-t0)};}
+
+/* ================= prompt & try ================= */
+const diffWord=()=>({recall:'recall only',mixed:'mixed difficulty',applied:'applied & reasoning'})[$('#diff').value]||'mixed';
+function collectPrevStems(){const a=[];state.runs.forEach(r=>{if(!r.void)r.questions.forEach(q=>a.push(q.q));});return a;}
+
+async function makeTry(n,job,prevStems){
+  const t0=performance.now();
+  let raw,tok={sent:0,got:0},temp=0;
+  if(state.provider==='local'){
+    const seed=(hashStr(state.text)^Math.imul(n,2654435761)^Math.imul(state.forgeN,97)^(job.kind==='reform'?7:0))>>>0;
+    raw=JSON.stringify(localGenerate(state.qCount,prevStems,seed));
+  }else{
+    const th=state.thrift;
+    const ctx=th?getCondensed():state.text.slice(0,12000);
+    temp=Math.min(1.1,0.65+n*0.1);
+    const sys=th
+      ?'You write school exam questions. Reply ONLY a JSON array — no prose, no markdown. Each item: {"q":stem,"choices":["..","..","..",".."],"answer":0-3,"topic":"2-4 words"}.'
+      :'You are a meticulous school exam setter. Write varied, precise multiple-choice questions grounded strictly in the source. Vary question types (recall, inference, application). Never copy source sentences verbatim — rephrase. Distribute correct answers across A–D. Reply ONLY a JSON array, no prose, no markdown. Each item: {"q":stem,"choices":[4 strings],"answer":index 0-3,"topic":"2-4 words"}.';
+    let usr='SOURCE:\n'+ctx+'\n\nWrite '+state.qCount+' multiple-choice questions ('+diffWord()+').';
+    if(prevStems.length)usr+='\nDo not repeat or paraphrase these earlier stems: '+prevStems.slice(0,6).map
