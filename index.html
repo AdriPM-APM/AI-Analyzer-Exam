@@ -831,4 +831,433 @@ async function makeTry(n,job,prevStems){
       ?'You write school exam questions. Reply ONLY a JSON array — no prose, no markdown. Each item: {"q":stem,"choices":["..","..","..",".."],"answer":0-3,"topic":"2-4 words"}.'
       :'You are a meticulous school exam setter. Write varied, precise multiple-choice questions grounded strictly in the source. Vary question types (recall, inference, application). Never copy source sentences verbatim — rephrase. Distribute correct answers across A–D. Reply ONLY a JSON array, no prose, no markdown. Each item: {"q":stem,"choices":[4 strings],"answer":index 0-3,"topic":"2-4 words"}.';
     let usr='SOURCE:\n'+ctx+'\n\nWrite '+state.qCount+' multiple-choice questions ('+diffWord()+').';
-    if(prevStems.length)usr+='\nDo not repeat or paraphrase these earlier stems: '+prevStems.slice(0,6).map
+    if(prevStems.length)usr+='\nDo not repeat or paraphrase these earlier stems: '+prevStems.slice(0,6).map(s=>'"'+clip(s,60)+'…"').join('; ');
+    if(job.kind==='reform')usr+='\nThe previous attempt was rejected as lazy. Be complete and original.';
+    const maxTok=th?state.qCount*130+250:state.qCount*260+450;
+    tok.sent=Math.round((sys.length+usr.length)/4);
+    raw=await chat(sys,usr,temp,maxTok);
+    tok.got=Math.round((raw||'').length/4);
+    state.spent+=tok.sent+tok.got;
+  }
+  const ms=performance.now()-t0;
+  const questions=parseQuestions(raw);
+  questions.forEach(q=>q.ansIdx=q.answer);
+  const audit=auditTry(questions,state.qCount,prevStems);
+  return {n,kind:job.kind,of:job.of,questions,audit,ms,tok,meta:{model:modelLabel(),temp},void:false};
+}
+
+/* ================= rendering ================= */
+const sheets=$('#sheets'),ledgerBody=$('#ledgerBody');
+const PEN_NAMES={E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'one-letter',E8:'placeholder',E9:'echo'};
+
+function qRow(q,i){
+  const letters='ABCDEF';
+  const ch=(q.choices||[]).map((c,j)=>{const k=j===q.ansIdx;
+    return '<li class="'+(k?'key':'')+'"><span class="letter'+(k?' circled':'')+'">'+letters[j]+'</span><span>'+esc(c)+'</span>'+(k?CHECK:'')+'</li>';}).join('');
+  const pen=q._flags&&q._flags.length?'<div class="pennote">'+q._flags.map(esc).join('<br>')+'</div>':'';
+  return '<li class="q'+(q._flags&&q._flags.length?' flagged':'')+'">'+
+    '<div class="stem"><span class="qno">Q'+(i+1)+'</span><span class="stem-text">'+esc(q.q)+'</span>'+
+    (q.topic?'<span class="topic">'+esc(q.topic)+'</span>':'')+'</div>'+
+    '<ul class="choices">'+ch+'</ul>'+pen+
+    '<button class="sa" data-i="'+i+'" title="SA · Simple Answer — plain words, no code">SA</button></li>';}
+
+function renderRun(run){
+  $('#emptyNote').style.display='none';
+  const el=document.createElement('article');el.className='sheet paper';el.dataset.n=run.n;
+  const d=(sheets.children.length*0.1).toFixed(2)+'s';
+  if(run.void){
+    el.innerHTML='<header><h3>Trial Nº '+run.n+'</h3>'+
+      (run.kind!=='first'?'<span class="tagchip">re-form of Nº '+run.of+'</span>':'')+
+      '<span class="meta">no paper produced</span></header>'+
+      '<span class="stamp void" style="--d:'+d+'">VOID</span>'+
+      '<p class="voidnote">'+esc(run.note||'The press jammed.')+'</p>';
+  }else{
+    const a=run.audit;
+    el.innerHTML='<header><h3>Trial Nº '+run.n+'</h3>'+
+      (run.kind!=='first'?'<span class="tagchip">re-form of Nº '+run.of+'</span>':'')+
+      '<span class="meta">'+esc(run.meta.model)+' · '+
+      (state.provider==='local'?'instant · local':'temp '+run.meta.temp.toFixed(2)+' · '+fmtMs(run.ms)+' · ≈'+fmtK(run.tok.sent+run.tok.got)+' tok')+
+      ' · warden '+a.ms+'</span>'+
+      '<button class="pdfbtn no-print" data-trial="'+run.n+'" title="Release this trial as PDF">PDF</button></header>'+
+      '<span class="stamp '+a.verdict.toLowerCase()+'" style="--d:'+d+'">'+a.verdict+' '+Math.round(a.score)+'</span>'+
+      '<ol class="qs">'+run.questions.map(qRow).join('')+'</ol>';
+    bindSA(el,run.questions);
+  }
+  sheets.appendChild(el);
+}
+function markReforming(n){const el=sheets.querySelector('[data-n="'+n+'"]');
+  if(el){const d=document.createElement('div');d.className='reforming';d.textContent='…re-forming — the warden was not amused.';el.appendChild(d);}}
+
+function ledgerRow(run){
+  const em=ledgerBody.querySelector('.lempty');if(em)em.remove();
+  const tr=document.createElement('div');tr.className='lrow';
+  let kind=run.kind==='first'?'first':'re-form',ded='—',sc='—',vd='VOID';
+  if(!run.void){
+    const g={};run.audit.items.forEach(i=>{if(i.pts>0)g[i.code]=(g[i.code]||0)+i.pts;});
+    const ks=Object.keys(g);
+    ded=ks.length?ks.map(c=>c+'×'+PEN_NAMES[c]+' −'+g[c]).join(' · '):'clean';
+    sc=Math.round(run.audit.score);vd=run.audit.verdict;}
+  else ded=esc(clip(run.note||'',46));
+  tr.innerHTML='<span>Nº'+run.n+'</span><span>'+kind+'</span><span>'+(run.void?'0':run.questions.length)+'</span>'+
+    '<span class="ded">'+ded+'</span><span class="sc">'+sc+'</span><span class="vd '+vd.toLowerCase()+'">'+vd+'</span>';
+  ledgerBody.appendChild(tr);ledgerFoot();}
+function ledgerFoot(){
+  const graded=state.runs.filter(r=>!r.void);
+  const pen=state.runs.reduce((s,r)=>s+(r.audit?r.audit.items.reduce((x,i)=>x+i.pts,0):0),0);
+  const lazy=graded.filter(r=>r.audit.verdict==='LAZY').length;
+  $('#ledgerFoot').innerHTML='papers '+graded.length+' · penalties <b>−'+pen+' pts</b> · lazy caught '+lazy;}
+
+/* ---- SA ---- */
+function bindSA(sheet,qs){
+  sheet.querySelectorAll('.sa').forEach(b=>b.addEventListener('click',()=>{
+    const q=qs[+b.dataset.i]; if(q) doSA(b,q);
+  }));
+}
+function localSA(q){
+  const ans=(q.ansIdx>=0&&q.choices&&q.choices[q.ansIdx])?q.choices[q.ansIdx]:'the keyed term';
+  const target=words((q.q||'')+' '+ans);
+  let best='',bs=0;
+  sentenceSplit(state.text).forEach(s=>{const sc=jaccard(words(s),target);if(sc>bs){bs=sc;best=s;}});
+  if(bs>0.12&&best)return 'Plain words: the source says “'+clip(best,170)+'” — and that is what points to “'+ans+'”.';
+  return 'Plain words: the paper asks which term fits — the source points to “'+ans+'”.';}
+async function doSA(btn,q){
+  const li=btn.closest('.q');
+  const old=li.querySelector('.sa-note');
+  if(old){old.remove();btn.classList.remove('on');return;}
+  btn.classList.add('busy');
+  const note=document.createElement('div');note.className='sa-note';
+  note.innerHTML='<span class="sa-tag">SA</span><span class="sa-body">thinking…</span>';
+  const anchor=li.querySelector('.choices')||li.querySelector('.stem');
+  anchor.after(note);
+  try{
+    let txt;
+    if(state.provider==='local')txt=localSA(q);
+    else{
+      const th=state.thrift;
+      const sys=th?'One plain-language explanation, max 35 words. No code, no markdown, no jargon.'
+                  :'Explain for a school student: max 70 words, plain language, no code, no markdown.';
+      const correct=(q.ansIdx>=0&&q.choices[q.ansIdx]!=null)?q.choices[q.ansIdx]:'?';
+      const usr='Question: '+q.q+'\nCorrect answer: '+correct+
+        (th?'':'\nSource excerpt: '+condense(state.text,800))+'\nExplain why that is the answer, in simple words.';
+      const sent=(sys.length+usr.length)/4;
+      const r=await chat(sys,usr,0.4,th?110:240);
+      state.spent+=sent+((r||'').length/4);updateMeter();
+      txt=(r||'').trim().replace(/^["']+|["']+$/g,'');
+      if(!txt)throw new Error('empty reply');}
+    note.querySelector('.sa-body').textContent=txt;
+    btn.classList.add('on');
+  }catch(e){note.classList.add('bad');note.querySelector('.sa-body').textContent='SA failed: '+e.message;}
+  finally{btn.classList.remove('busy');}}
+
+/* ================= PDF release ================= */
+async function ensurePdfLibs(){
+  await Promise.all([loadScript(JSPDF_SRC),loadScript(H2C_SRC)]);
+  if(!window.jspdf||!window.jspdf.jsPDF)throw new Error('jsPDF failed to load');
+  if(!window.html2canvas)throw new Error('html2canvas failed to load');
+  if(document.fonts&&document.fonts.ready){try{await document.fonts.ready;}catch(e){}}
+}
+
+async function releasePdf(el,filename){
+  await ensurePdfLibs();
+
+  /* Clone for rendering so we never touch the live paper. */
+  const clone=el.cloneNode(true);
+  clone.classList.add('pdf-clean');
+  clone.style.position='absolute';
+  clone.style.left='-10000px';
+  clone.style.top='0';
+  clone.style.width='794px';
+  clone.style.maxWidth='none';
+  clone.style.margin='0';
+  clone.style.padding='28px 32px';
+  clone.style.background='var(--paper)';
+  document.body.appendChild(clone);
+
+  try{
+    /* Give the clone a frame to lay out. */
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+    const canvas=await html2canvas(clone,{
+      scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,windowWidth:794
+    });
+
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({unit:'mm',format:'a4',orientation:'portrait',compress:true});
+    const pdfW=pdf.internal.pageSize.getWidth();
+    const pdfH=pdf.internal.pageSize.getHeight();
+
+    const imgW=pdfW;
+    const imgH=canvas.height*imgW/canvas.width;
+
+    if(imgH<=pdfH+0.5){
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',0,0,imgW,imgH);
+    }else{
+      /* Paginate across A4 sheets. */
+      const pageCanvasH=Math.floor(canvas.width*pdfH/pdfW);
+      const pages=Math.ceil(canvas.height/pageCanvasH);
+      for(let i=0;i<pages;i++){
+        const sliceH=Math.min(pageCanvasH,canvas.height-i*pageCanvasH);
+        if(sliceH<=0)break;
+        const c=document.createElement('canvas');
+        c.width=canvas.width;c.height=sliceH;
+        const ctx=c.getContext('2d');
+        ctx.fillStyle='#ffffff';ctx.fillRect(0,0,c.width,c.height);
+        ctx.drawImage(canvas,0,i*pageCanvasH,canvas.width,sliceH,0,0,canvas.width,sliceH);
+        if(i>0)pdf.addPage();
+        const sliceImgH=sliceH*imgW/canvas.width;
+        pdf.addImage(c.toDataURL('image/jpeg',0.92),'JPEG',0,0,imgW,sliceImgH);
+      }
+    }
+
+    pdf.save(filename);
+  }finally{
+    clone.remove();
+  }
+}
+
+async function releaseTrialElement(sheetEl,n){
+  try{
+    slip('Rendering trial '+n+' as PDF…','green');
+    await releasePdf(sheetEl,'examination-trial-'+n+'.pdf');
+    slip('Trial '+n+' released.','green');
+  }catch(e){
+    slip('PDF failed (trial '+n+'): '+e.message,'red');
+  }
+}
+
+async function releaseFinalPdf(){
+  const fp=$('#finalPaper');
+  if(!fp||!fp.querySelector('.q')){slip('Forge a paper first.','red');return;}
+  const btn=$('#releaseFinal');
+  if(btn){btn.disabled=true;btn.textContent='releasing…';}
+  try{
+    slip('Rendering final paper as PDF…','green');
+    await releasePdf(fp,'examination-final.pdf');
+    slip('Final paper released.','green');
+  }catch(e){
+    slip('PDF failed: '+e.message,'red');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='release final as PDF';}
+  }
+}
+
+async function releaseAllPdfs(){
+  if(state.running){slip('Wait for the forge to finish.','red');return;}
+  const papers=[];
+  const fp=$('#finalPaper');
+  if(fp&&fp.querySelector('.q'))papers.push({el:fp,name:'examination-final.pdf'});
+  sheets.querySelectorAll('.sheet').forEach(el=>{
+    if(!el.querySelector('.qs'))return;
+    papers.push({el,name:'examination-trial-'+el.dataset.n+'.pdf'});
+  });
+  if(!papers.length){slip('Forge a paper first.','red');return;}
+
+  const btn=$('#releaseAll');
+  if(btn){btn.disabled=true;btn.textContent='releasing '+papers.length+'…';}
+  let ok=0,fail=0;
+  try{
+    for(let i=0;i<papers.length;i++){
+      slip('Releasing '+(i+1)+' / '+papers.length+' · '+papers[i].name,'green');
+      try{
+        await releasePdf(papers[i].el,papers[i].name);
+        ok++;
+      }catch(e){
+        fail++;
+        slip('Failed: '+papers[i].name+' — '+e.message,'red');
+      }
+      await sleep(450); /* avoid the browser blocking repeated downloads */
+    }
+    slip('Released '+ok+' PDF'+(ok===1?'':'s')+(fail?' ('+fail+' failed)':'')+'.','green');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='release ALL trials as PDFs';}
+  }
+}
+
+/* Delegated binding for per-trial PDF buttons. */
+sheets.addEventListener('click',e=>{
+  const btn=e.target.closest('.pdfbtn');
+  if(!btn)return;
+  const sheet=btn.closest('.sheet');
+  if(sheet)releaseTrialElement(sheet,+btn.dataset.trial);
+});
+
+/* ================= report & final paper ================= */
+function pickBest(){
+  const standing=state.runs.filter(r=>!r.void&&!state.replacedN.has(r.n)&&r.audit.verdict!=='LAZY');
+  const order=standing.slice().sort((a,b)=>b.audit.score-a.audit.score);
+  const out=[];
+  for(const r of order)for(const q of r.questions){
+    if(!(q.ansIdx>=0))continue;
+    if(out.some(p=>jaccard(words(p.q),words(q.q))>=0.6))continue;
+    out.push(q);if(out.length>=10)return out;}
+  return out;}
+
+function buildReport(elapsed){
+  const graded=state.runs.filter(r=>!r.void);
+  const standing=graded.filter(r=>!state.replacedN.has(r.n));
+  const avg=standing.length?standing.reduce((s,r)=>s+r.audit.score,0)/standing.length:0;
+  const pen=state.runs.reduce((s,r)=>s+(r.audit?r.audit.items.reduce((x,i)=>x+i.pts,0):0),0);
+  const lazy=graded.filter(r=>r.audit.verdict==='LAZY').length;
+  const counts={GOOD:0,SHAKY:0,LAZY:0};graded.forEach(r=>counts[r.audit.verdict]++);
+  const g=avg>=92?['A','firm hand','gA']:avg>=85?['B+','solid work','gB']:avg>=78?['B','sound','gB']:avg>=70?['C','passes, barely','gC']:['D','see me after class','gD'];
+  const penBy={};state.runs.forEach(r=>{if(r.audit)r.audit.items.forEach(i=>{if(i.pts>0)penBy[i.code]=(penBy[i.code]||0)+i.pts;});});
+  const penStr=Object.keys(penBy).length?Object.entries(penBy).map(([c,p])=>c+' −'+p).join(' · '):'none — spotless';
+  const bestQ=pickBest();
+  const letters='ABCDEF';
+
+  $$('#deskcol .report').forEach(e=>e.remove());
+
+  const rep=document.createElement('article');rep.className='report paper';
+  rep.innerHTML='<h2>Report Card — Results</h2>'+
+    '<div class="rsub">compiled by the warden after '+graded.length+' graded '+(graded.length===1?'try':'tries')+'</div>'+
+    '<div class="rgrid"><div class="rrows">'+
+    '<div class="rrow"><span class="k">Papers graded</span><span class="v">'+graded.length+(state.replacedN.size?' ('+state.replacedN.size+' re-formed from lazy tries)':'')+'</span></div>'+
+    '<div class="rrow"><span class="k">Verdicts</span><span class="v">GOOD '+counts.GOOD+' · SHAKY '+counts.SHAKY+' · LAZY '+counts.LAZY+'</span></div>'+
+    '<div class="rrow"><span class="k">Lazy tries caught</span><span class="v">'+lazy+'</span></div>'+
+    '<div class="rrow"><span class="k">Penalties levied</span><span class="v"><span class="rd">−'+pen+' pts</span> &nbsp;('+esc(penStr)+')</span></div>'+
+    '<div class="rrow"><span class="k">Integrity score</span><span class="v">'+Math.round(avg)+' / 100</span></div>'+
+    '<div class="rrow"><span class="k">Est. tokens spent</span><span class="v">'+(state.provider==='local'?'0 — local':'≈'+fmtK(Math.round(state.spent))+' ('+esc(modelLabel())+')')+'</span></div>'+
+    '<div class="rrow"><span class="k">Forge time</span><span class="v">'+fmtMs(elapsed)+'</span></div>'+
+    '<div class="rrow"><span class="k">Kept for final paper</span><span class="v">'+bestQ.length+' questions</span></div>'+
+    '</div><div class="gstamp '+g[2]+'"><b>'+g[0]+'</b><i>integrity '+Math.round(avg)+' · '+g[1]+'</i></div></div>';
+  $('#deskcol').appendChild(rep);
+
+  const fp=document.createElement('article');fp.className='report paper';fp.id='finalPaper';
+  const fq=bestQ.map((q,i)=>'<li class="q" style="padding-right:0"><div class="stem"><span class="qno">'+(i+1)+'.</span><span>'+esc(q.q)+'</span></div>'+
+    '<ul class="choices">'+(q.choices||[]).map((c,j)=>'<li><span class="letter">'+letters[j]+'</span><span>'+esc(c)+'</span></li>').join('')+'</ul>'+
+    '<button class="sa" data-i="'+i+'" title="SA · Simple Answer — plain words, no code">SA</button></li>').join('');
+  const key=bestQ.map((q,i)=>(i+1)+'. '+letters[q.ansIdx]+' — '+clip(q.choices[q.ansIdx]||'?',80)).join('<br>');
+  fp.innerHTML='<h2>Final Examination Paper</h2>'+
+    '<div class="rsub">assembled from the best of the graded tries — deduplicated by the warden</div>'+
+    '<div class="finstr">Answer all questions. Circle the correct letter. No documents besides your own wits.</div>'+
+    '<ol class="qs" style="list-style:none">'+(fq||'<li class="voidnote">The source was too thin to compile a paper — forge more tries or feed it a meatier document.</li>')+'</ol>'+
+    '<div class="release-bar no-print">'+
+      '<button class="btn2" id="releaseFinal">release as PDF</button>'+
+      '<button class="btn2" id="releaseAll">release ALL trials as PDFs</button>'+
+      '<span class="release-note">One PDF per trial + one final paper. Chrome / Edge may ask you to allow multiple downloads — say yes.</span>'+
+    '</div>'+
+    '<div class="keywrap"><div class="keyhead"><h4>Answer key</h4>'+
+    '<button class="btn2 no-print" id="revealKey">reveal</button>'+
+    '<button class="btn2 no-print" id="printPaper">print paper</button></div>'+
+    '<div id="keyList" class="blurred">'+key+'</div></div>';
+  $('#deskcol').appendChild(fp);
+  bindSA(fp,bestQ);
+  $('#revealKey').onclick=e=>{const k=$('#keyList');k.classList.toggle('blurred');
+    e.target.textContent=k.classList.contains('blurred')?'reveal':'hide';};
+  $('#printPaper').onclick=()=>window.print();
+  $('#releaseFinal').onclick=releaseFinalPdf;
+  $('#releaseAll').onclick=releaseAllPdfs;
+  rep.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+/* ================= forge loop ================= */
+function clearDesk(){
+  state.runs=[];state.replacedN=new Set();state.spent=0;
+  sheets.innerHTML='';ledgerBody.innerHTML='<div class="lempty">— no trials graded yet —</div>';ledgerFoot();
+  $$('#deskcol .report').forEach(e=>e.remove());
+  $('#emptyNote').style.display=state.text?'none':'block';updateMeter();}
+ $('#clearDesk').onclick=()=>{if(state.running)return;clearDesk();slip('Desk cleared. Fresh paper on the tray.');};
+
+let _statusT=null,_forgeT0=0,_statusLabel='';
+function startStatus(label){
+  _statusLabel=label;_forgeT0=performance.now();
+  clearInterval(_statusT);
+  const f=()=>{$('#forgeStatus').textContent=_statusLabel+' ('+((performance.now()-_forgeT0)/1000).toFixed(1)+'s)';};
+  f();_statusT=setInterval(f,200);
+}
+function stopStatus(){clearInterval(_statusT);_statusT=null;}
+
+async function forge(){
+  if(state.running)return;
+  if(!state.text){slip('Load a document first — the warden grades substance, not air.','red');return;}
+  const err=providerReady();if(err){slip(err,'red');return;}
+  state.running=true;state.forgeN++;clearDesk();
+  const btn=$('#forgeBtn');btn.disabled=true;btn.querySelector('span').textContent='Warden at work…';
+  srcGrams=ngrams(state.text,16);
+  const t0=performance.now();
+  const queue=[];for(let i=0;i<state.triesWanted;i++)queue.push({kind:'first',of:null});
+  let n=0;const jobsMax=state.triesWanted*2;
+  try{
+    while(queue.length&&n<jobsMax){
+      const job=queue.shift();n++;
+      const label=job.kind==='first'?'trial '+n+' of ~'+state.triesWanted:'re-form of Nº '+job.of;
+      startStatus(label+' — writing…');
+      const prevStems=collectPrevStems();
+      let run;
+      try{run=await makeTry(n,job,prevStems);}
+      catch(e){
+        run={n,kind:job.kind,of:job.of,void:true,note:e.message,questions:[],audit:null,ms:0,tok:{sent:0,got:0},meta:{model:modelLabel(),temp:0}};
+      }
+      stopStatus();
+      state.runs.push(run);renderRun(run);ledgerRow(run);updateMeter();
+      if(!run.void&&run.audit.verdict==='LAZY'&&job.kind==='first'&&n<jobsMax){
+        state.replacedN.add(run.n);markReforming(run.n);
+        queue.push({kind:'reform',of:n});
+        slip('Trial Nº '+run.n+' stamped LAZY ('+Math.round(run.audit.score)+'/100) — re-forming.','red');}
+      await sleep(160);
+    }
+    $('#forgeStatus').textContent='compiling report…';
+    buildReport(performance.now()-t0);
+  }finally{
+    stopStatus();
+    state.running=false;btn.disabled=false;btn.querySelector('span').textContent='Forge the examination';
+    $('#forgeStatus').textContent='run complete — report card below';
+  }
+}
+ $('#forgeBtn').addEventListener('click',forge);
+
+/* ================= controls ================= */
+ $$('#provSeg button').forEach(b=>b.addEventListener('click',()=>{
+  captureFields();
+  $$('#provSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  state.provider=b.dataset.p;renderProviderFields();saveCfg();
+}));
+ $('#thrift').addEventListener('change',e=>{state.thrift=e.target.checked;resetCondCache();updateMeter();saveCfg();});
+
+ let _budT=null;
+ $('#budget').addEventListener('input',e=>{
+   state.budget=+e.target.value;
+   if(_budT)clearTimeout(_budT);
+   _budT=setTimeout(()=>{resetCondCache();updateMeter();saveCfg();},120);
+ });
+
+ $('#diff').addEventListener('change',saveCfg);
+
+function bindStepper(id,min,max,get,set){
+  const r=$('#'+id),v=r.querySelector('.sv');
+  const draw=()=>{v.textContent=get();};
+  r.querySelector('.minus').onclick=()=>{set(Math.max(min,get()-1));draw();updateMeter();saveCfg();};
+  r.querySelector('.plus').onclick=()=>{set(Math.min(max,get()+1));draw();updateMeter();saveCfg();};
+  draw();
+}
+bindStepper('stTries',1,6,()=>state.triesWanted,v=>state.triesWanted=v);
+bindStepper('stQ',3,8,()=>state.qCount,v=>state.qCount=v);
+
+function updateMeter(){
+  const th=state.thrift,q=state.qCount;
+  const ctxChars=state.text?(th?getCondensed().length:Math.min(state.text.length,12000)):0;
+  const ctxTok=Math.ceil(ctxChars/4),outTok=q*(th?130:260)+(th?250:450);
+  $('#mCtx').textContent=fmtK(ctxTok);$('#mOut').textContent=fmtK(outTok);
+  $('#mReq').textContent=fmtK(ctxTok+outTok);$('#mSpent').textContent=fmtK(Math.round(state.spent));
+  $('#budgetOut').textContent='context cap '+state.budget.toLocaleString()+' chars';
+  if(state.text){const full=getDocStats().tokens;
+    $('#condLine').textContent=th?'source ≈'+fmtK(full)+' tok → sending ≈'+fmtK(ctxTok)+' tok'
+                                 :'full mode — sending first ≈'+fmtK(ctxTok)+' tok of source';}
+  else $('#condLine').textContent='';
+}
+
+/* ================= boot ================= */
+try{
+  renderProviderFields();updateMeter();
+  if(cfg.provider){const b=$('#provSeg [data-p="'+cfg.provider+'"]');if(b)b.click();}
+  if(cfg.thrift===false){$('#thrift').checked=false;state.thrift=false;updateMeter();}
+  if(cfg.budget){$('#budget').value=cfg.budget;state.budget=cfg.budget;updateMeter();}
+  if(cfg.tries)state.triesWanted=cfg.tries;
+  if(cfg.q)state.qCount=cfg.q;
+  bindStepper('stTries',1,6,()=>state.triesWanted,v=>state.triesWanted=v);
+  bindStepper('stQ',3,8,()=>state.qCount,v=>state.qCount=v);
+  if(cfg.diff)$('#diff').value=cfg.diff;
+}catch(e){console.error('boot',e);}
+</script>
+</body>
+</html>
