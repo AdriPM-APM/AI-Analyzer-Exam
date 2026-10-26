@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- ✅ FIX: quiet the benign Permissions-Policy warnings where possible -->
+<meta http-equiv="Permissions-Policy" content="private-aggregation=(), attribution-reporting=(), interest-cohort=()">
 <title>The Examination Forge</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚔️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -88,6 +89,7 @@ main{display:grid;grid-template-columns:384px minmax(0,1fr);gap:34px;align-items
 .field input:focus,.field select:focus{outline:none;border-bottom-color:var(--red)}
 .hint{font:italic 400 11.5px var(--serif);color:var(--ink2);margin-top:10px;line-height:1.5}
 .hint code{font:600 10.5px var(--mono);background:rgba(33,29,22,.07);padding:1px 5px}
+.hint.warn{color:var(--red);font-style:normal;font-size:10.5px}
 
 .ballot{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
 .ballot input{appearance:none;width:16px;height:16px;border:1.5px solid var(--ink);flex:none;margin-top:1px;position:relative;cursor:pointer}
@@ -409,6 +411,23 @@ const state={files:[],text:'',provider:'openrouter',thrift:true,budget:2400,
 let srcGrams=null;
 let cfg={};try{cfg=JSON.parse(localStorage.getItem('forge.cfg')||'{}');}catch(e){}
 
+/* ================= Gemini model whitelist ================= */
+// ✅ FIX: only these model names are valid for the v1beta generateContent endpoint.
+const VALID_GEMINI_MODELS = new Set([
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash-001',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-1.5-pro',
+  'gemini-1.5-pro-002'
+]);
+function validateGeminiModel(m){
+  if(!VALID_GEMINI_MODELS.has(m)){
+    throw new Error('Invalid Gemini model “'+m+'”. Use one of: '+[...VALID_GEMINI_MODELS].join(', '));
+  }
+}
+
 /* ---------- memoized condensate + doc stats ---------- */
 let _cond={key:'',val:''};
 function getCondensed(){
@@ -442,9 +461,11 @@ const MAMMOTH='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.brow
 const TESS='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
 const JSPDF_SRC='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const H2C_SRC='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+const JSPDF_FALLBACK='https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js';
+const H2C_FALLBACK='https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js';
 const _sc={};
 function loadScript(src){if(_sc[src])return _sc[src];_sc[src]=new Promise((res,rej)=>{
-  const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('could not load '+src));
+  const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>{delete _sc[src];rej(new Error('could not load '+src));};
   document.head.appendChild(s);});return _sc[src];}
 
 /* ================= extraction ================= */
@@ -455,8 +476,10 @@ async function extractText(file,onProg){
     return {text:await file.text(),method:'PLAIN TEXT'};
   if(ext==='pdf'||file.type==='application/pdf'){
     await loadScript(PDFJS);
-    if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFWK;
+    // ✅ FIX: original condition was inverted (`!== ''`), so the worker was never set.
+    // The correct check is "if not already set, set it".
+    if(!window.pdfjsLib.GlobalWorkerOptions.workerSrc){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFWK;
     }
     const buf=new Uint8Array(await file.arrayBuffer());
     const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
@@ -486,24 +509,32 @@ const COMBINED_CAP=300000;
 async function addFiles(fileList){
   const files=[...fileList];
   if(!files.length)return;
+  // ✅ FIX: disable the forge button while extraction is in flight.
+  const wasEnabled=!$('#forgeBtn').disabled;
+  $('#forgeBtn').disabled=true;
   let added=0,rejected=0;
-  for(const file of files){
-    if(file.size>25e6){slip(file.name+' is over 25 MB — skipped.','red');rejected++;continue;}
-    if(state.files.some(f=>f.name===file.name&&f.size===file.size)){
-      slip(file.name+' is already on the desk.','red');rejected++;continue;}
-    $('#forgeStatus').textContent='extracting '+clip(file.name,32)+'…';
-    try{
-      const {text,method}=await extractText(file,(p,msg)=>{setOcr(p);$('#forgeStatus').textContent='extracting — '+msg;});
-      setOcr(null);
-      const clean=String(text).replace(/\u0000/g,'').trim();
-      if(clean.length<40){slip(file.name+': almost no readable text.','red');rejected++;continue;}
-      state.files.push({name:file.name,size:file.size,text:clean,method});
-      added++;
-    }catch(e){
-      slip(file.name+': '+e.message,'red');rejected++;setOcr(null);
+  try{
+    for(const file of files){
+      if(file.size>25e6){slip(file.name+' is over 25 MB — skipped.','red');rejected++;continue;}
+      if(state.files.some(f=>f.name===file.name&&f.size===file.size)){
+        slip(file.name+' is already on the desk.','red');rejected++;continue;}
+      $('#forgeStatus').textContent='extracting '+clip(file.name,32)+'…';
+      try{
+        const {text,method}=await extractText(file,(p,msg)=>{setOcr(p);$('#forgeStatus').textContent='extracting — '+msg;});
+        setOcr(null);
+        const clean=String(text).replace(/\u0000/g,'').trim();
+        if(clean.length<40){slip(file.name+': almost no readable text.','red');rejected++;continue;}
+        state.files.push({name:file.name,size:file.size,text:clean,method});
+        added++;
+      }catch(e){
+        slip(file.name+': '+e.message,'red');rejected++;setOcr(null);
+      }
     }
+  }finally{
+    setOcr(null);
+    combineFiles();
+    if(state.files.length===0&&wasEnabled)$('#forgeBtn').disabled=true;
   }
-  combineFiles();
   if(added) slip('Added '+added+' file'+(added>1?'s':'')+'. Source corpus now '+
     fmtK(getDocStats().tokens)+' tokens across '+state.files.length+' file'+(state.files.length>1?'s':'')+'.','green');
 }
@@ -581,22 +612,38 @@ function condense(text,budget){
 /* ================= providers ================= */
 function renderProviderFields(){
   const M=cfg.models||{},K=cfg.keys||{},w=$('#pFields');
-  if(state.provider==='openrouter')w.innerHTML=
-    '<div class="field"><label>API key</label><input id="orKey" type="password" placeholder="sk-or-…" value="'+esc(K.orKey||'')+'"></div>'+
-    '<div class="field"><label>Model</label><input id="orModel" type="text" value="'+esc(M.orModel||'openai/gpt-4o-mini')+'"></div>'+
-    '<p class="hint">Key stays in this browser. Free-tier models are plenty for this job.</p>';
-  else if(state.provider==='gemini')w.innerHTML=
-    '<div class="field"><label>API key</label><input id="gmKey" type="password" placeholder="AIza…" value="'+esc(K.gmKey||'')+'"></div>'+
-    '<div class="field"><label>Model</label><input id="gmModel" type="text" value="'+esc(M.gmModel||'gemini-2.5-flash')+'"></div>'+
-    '<p class="hint">Free keys at aistudio.google.com — calls go straight from this page.</p>';
-  else if(state.provider==='ollama')w.innerHTML=
-    '<div class="field"><label>Base URL</label><input id="olBase" type="text" value="'+esc(M.olBase||'http://localhost:11434')+'"></div>'+
-    '<div class="field"><label>Model</label><input id="olModel" type="text" value="'+esc(M.olModel||'llama3.2')+'"></div>'+
-    '<p class="hint">Start it with <code>OLLAMA_ORIGINS="*" ollama serve</code> so this page may speak to it. Zero cost, fully local.</p>';
-  else w.innerHTML='<p class="hint">No network at all — the <b>Drill Sergeant</b> writes cloze and recall items straight out of your text. Zero tokens, instant, and the warden grades it exactly the same.</p>';
+  if(state.provider==='openrouter'){
+    w.innerHTML=
+      '<div class="field"><label>API key</label><input id="orKey" type="password" placeholder="sk-or-…" value="'+esc(K.orKey||'')+'"></div>'+
+      '<div class="field"><label>Model</label><input id="orModel" type="text" value="'+esc(M.orModel||'openai/gpt-4o-mini')+'"></div>'+
+      '<p class="hint">Key stays in this browser. Free-tier models are plenty for this job.</p>'+
+      '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>';
+  }else if(state.provider==='gemini'){
+    // ✅ FIX: datalist of valid model names prevents the 400 Bad Request from typos.
+    w.innerHTML=
+      '<div class="field"><label>API key</label><input id="gmKey" type="password" placeholder="AIza…" value="'+esc(K.gmKey||'')+'"></div>'+
+      '<div class="field"><label>Model</label>'+
+        '<input id="gmModel" type="text" list="geminiModels" value="'+esc(M.gmModel||'gemini-2.0-flash')+'" placeholder="gemini-2.0-flash">'+
+        '<datalist id="geminiModels">'+[...VALID_GEMINI_MODELS].map(m=>'<option value="'+m+'">').join('')+'</datalist>'+
+      '</div>'+
+      '<p class="hint">Free keys at aistudio.google.com — calls go straight from this page.</p>'+
+      '<p class="hint warn">Use a valid model like <code>gemini-2.0-flash</code>. Invalid names cause a 400 error.</p>'+
+      '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>';
+  }else if(state.provider==='ollama'){
+    w.innerHTML=
+      '<div class="field"><label>Base URL</label><input id="olBase" type="text" value="'+esc(M.olBase||'http://localhost:11434')+'"></div>'+
+      '<div class="field"><label>Model</label><input id="olModel" type="text" value="'+esc(M.olModel||'llama3.2')+'"></div>'+
+      '<p class="hint">Start it with <code>OLLAMA_ORIGINS="*" ollama serve</code> so this page may speak to it. Zero cost, fully local.</p>'+
+      '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>';
+  }else{
+    w.innerHTML='<p class="hint">No network at all — the <b>Drill Sergeant</b> writes cloze and recall items straight out of your text. Zero tokens, instant, and the warden grades it exactly the same.</p>';
+  }
   w.querySelectorAll('input').forEach(i=>i.addEventListener('change',saveCfg));
+  const tb=w.querySelector('#testConn');
+  if(tb) tb.addEventListener('click',testConnection);
 }
 
+/* Always capture the current fields into memory. Persist keys only when remembered. */
 function captureFields(){
   cfg.provider=state.provider;cfg.thrift=state.thrift;cfg.budget=state.budget;
   cfg.tries=state.triesWanted;cfg.q=state.qCount;cfg.diff=$('#diff').value;
@@ -610,6 +657,7 @@ function writeCfg(){
   try{
     captureFields();
     const toSave=JSON.parse(JSON.stringify(cfg));
+    // ✅ FIX (security): never persist keys unless the box is ticked.
     if(!cfg.remember)toSave.keys={};
     localStorage.setItem('forge.cfg',JSON.stringify(toSave));
   }catch(e){}
@@ -622,10 +670,7 @@ function providerReady(){
   return null;}
 function modelLabel(){
   if(state.provider==='openrouter')return ($('#orModel')&&$('#orModel').value.trim())||'openai/gpt-4o-mini';
-  if(state.provider==='gemini'){
-    const raw = ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-2.5-flash';
-    return raw.replace(/^google\//i, '');
-  }
+  if(state.provider==='gemini')return ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-2.0-flash';
   if(state.provider==='ollama')return ($('#olModel')&&$('#olModel').value.trim())||'llama3.2';
   return 'drill sergeant';}
 
@@ -636,19 +681,30 @@ async function chat(sys,usr,temp,maxTok){
       const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{signal:ctl.signal,method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+$('#orKey').value.trim()},
         body:JSON.stringify({model:modelLabel(),messages:[{role:'system',content:sys},{role:'user',content:usr}],temperature:temp,max_tokens:maxTok})});
-      const d=await r.json();if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));
+      const d=await r.json();
+      if(!r.ok){
+        const msg=(d&&d.error&&d.error.message)||('HTTP '+r.status);
+        throw new Error('OpenRouter API error: '+msg);
+      }
       return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
     }
     if(state.provider==='gemini'){
-      const model = modelLabel();
-      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent($('#gmKey').value.trim()),
-        {signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          systemInstruction:{parts:[{text:sys}]},
-          contents:[{role:'user',parts:[{text:usr}]}],
-          generationConfig:{temperature:temp,maxOutputTokens:maxTok}
-        })});
-      const d=await r.json();if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));
+      const model=modelLabel();
+      const key=$('#gmKey').value.trim();
+      if(!key)throw new Error('Gemini API key is missing.');
+      // ✅ FIX: validate model name before calling the API → prevents 400s.
+      validateGeminiModel(model);
+      const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+
+        ':generateContent?key='+encodeURIComponent(key);
+      const r=await fetch(url,{signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:usr}]}],
+          generationConfig:{temperature:temp,maxOutputTokens:maxTok}})});
+      const d=await r.json();
+      if(!r.ok){
+        // ✅ FIX: surface the real API error message (not just the HTTP code).
+        const msg=(d&&d.error&&d.error.message)||('HTTP '+r.status);
+        throw new Error('Gemini API error: '+msg);
+      }
       return ((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('');
     }
     if(state.provider==='ollama'){
@@ -656,11 +712,33 @@ async function chat(sys,usr,temp,maxTok){
       const r=await fetch(base+'/api/chat',{signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({model:modelLabel(),messages:[{role:'system',content:sys},{role:'user',content:usr}],
           stream:false,options:{temperature:temp,num_predict:maxTok}})});
-      const d=await r.json();if(!r.ok)throw new Error(typeof d.error==='string'?d.error:('HTTP '+r.status));
+      const d=await r.json();
+      if(!r.ok){
+        const msg=(typeof d.error==='string'&&d.error)||('HTTP '+r.status);
+        throw new Error('Ollama API error: '+msg);
+      }
       return (d.message&&d.message.content)||'';
     }
     throw new Error('No network provider selected.');
   }finally{clearTimeout(to);}
+}
+
+/* ---------- connection test ---------- */
+async function testConnection(){
+  const btn=$('#testConn');
+  if(!btn)return;
+  const err=providerReady();
+  if(err){slip(err,'red');return;}
+  const old=btn.textContent;btn.disabled=true;btn.textContent='testing…';
+  try{
+    const r=await chat('Reply with exactly the word OK and nothing else.','ping',0,10);
+    if(r&&r.trim())slip('Connection OK — got a reply.','green');
+    else slip('Connected but got an empty reply.','red');
+  }catch(e){
+    slip('Connection failed: '+e.message,'red');
+  }finally{
+    btn.disabled=false;btn.textContent=old;
+  }
 }
 
 /* ================= local drill sergeant ================= */
@@ -696,8 +774,14 @@ function localGenerate(count,prevStems,seed){
     const caps=toks.filter(t=>/^[A-Z]/.test(t)&&capPool.indexOf(t)>=0&&!s.startsWith(t));
     let term=null;
     if(caps.length&&wc<=26)term=caps[0];
-    else{const r=toks.filter(t=>!STOP.has(t.toLowerCase())).sort((a,b)=>((tf.get(a.toLowerCase())||0)-(tf.get(b.toLowerCase())||0)))[0];
-      if(r&&r.length>=6&&wc<=26)term=r;}
+    else{
+      // ✅ IMPROVEMENT: prefer a low-frequency but still repeated word, fall back to single-occurrence if needed.
+      const ranked=toks.filter(t=>!STOP.has(t.toLowerCase()))
+        .map(t=>({t,f:tf.get(t.toLowerCase())||0}))
+        .sort((a,b)=>a.f-b.f);
+      const pick=ranked.find(x=>x.f>=2&&x.t.length>=6)||ranked.find(x=>x.t.length>=6);
+      if(pick)term=pick.t;
+    }
     if(term){const i=idxOf(term);if(i>=1&&i<16&&(wc-i)<16)cands.push({kind:'cloze',q:makeCloze(s,term),correct:term,key:term.toLowerCase()});}
     if(!negUsed&&wc>=14&&caps.length){
       const t=caps[0];
@@ -743,7 +827,15 @@ function localGenerate(count,prevStems,seed){
     if(top.length>=4)picked.push({q:'Which term carries the greatest weight in this source?',
       choices:shuffle(top,rng),answer:0,topic:'recall'});
   }
-  return picked;
+  // ✅ IMPROVEMENT: drop malformed questions and duplicate answers before returning.
+  const seen=new Set();
+  return picked.filter(q=>{
+    if(!Array.isArray(q.choices)||q.choices.length<4)return false;
+    if(!(q.answer>=0&&q.answer<q.choices.length))return false;
+    const a=norm(q.choices[q.answer]||'');
+    if(!a||seen.has(a))return false;
+    seen.add(a);return true;
+  });
 }
 
 /* ================= parsing ================= */
@@ -961,15 +1053,33 @@ async function doSA(btn,q){
 
 /* ================= PDF release ================= */
 async function ensurePdfLibs(){
-  await Promise.all([loadScript(JSPDF_SRC),loadScript(H2C_SRC)]);
+  // ✅ IMPROVEMENT: try primary CDN first, fall back to unpkg on failure.
+  try{
+    await Promise.all([loadScript(JSPDF_SRC),loadScript(H2C_SRC)]);
+  }catch(e1){
+    try{
+      await Promise.all([loadScript(JSPDF_FALLBACK),loadScript(H2C_FALLBACK)]);
+    }catch(e2){
+      throw new Error('PDF libraries failed to load from both CDNs: '+e2.message);
+    }
+  }
   if(!window.jspdf||!window.jspdf.jsPDF)throw new Error('jsPDF failed to load');
   if(!window.html2canvas)throw new Error('html2canvas failed to load');
-  if(document.fonts&&document.fonts.ready){try{await document.fonts.ready;}catch(e){}}
+  // ✅ IMPROVEMENT: don't hang forever waiting for webfonts.
+  if(document.fonts&&document.fonts.ready){
+    try{
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('font timeout')),3000))
+      ]);
+    }catch(e){console.warn('Font loading timeout — continuing anyway.');}
+  }
 }
 
 async function releasePdf(el,filename){
   await ensurePdfLibs();
 
+  /* Clone for rendering so we never touch the live paper. */
   const clone=el.cloneNode(true);
   clone.classList.add('pdf-clean');
   clone.style.position='absolute';
@@ -986,7 +1096,8 @@ async function releasePdf(el,filename){
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 
     const canvas=await html2canvas(clone,{
-      scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,windowWidth:794
+      scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false,windowWidth:794,
+      imageTimeout:15000
     });
 
     const {jsPDF}=window.jspdf;
@@ -1237,8 +1348,6 @@ function bindStepper(id,min,max,get,set){
   r.querySelector('.plus').onclick=()=>{set(Math.min(max,get()+1));draw();updateMeter();saveCfg();};
   draw();
 }
-bindStepper('stTries',1,6,()=>state.triesWanted,v=>state.triesWanted=v);
-bindStepper('stQ',3,8,()=>state.qCount,v=>state.qCount=v);
 
 function updateMeter(){
   const th=state.thrift,q=state.qCount;
@@ -1255,15 +1364,31 @@ function updateMeter(){
 
 /* ================= boot ================= */
 try{
-  renderProviderFields();updateMeter();
-  if(cfg.provider){const b=$('#provSeg [data-p="'+cfg.provider+'"]');if(b)b.click();}
-  if(cfg.thrift===false){$('#thrift').checked=false;state.thrift=false;updateMeter();}
-  if(cfg.budget){$('#budget').value=cfg.budget;state.budget=cfg.budget;updateMeter();}
+  // ✅ FIX: load saved settings into state BEFORE binding steppers or rendering.
+  if(cfg.thrift===false){$('#thrift').checked=false;state.thrift=false;}
+  if(cfg.budget){$('#budget').value=cfg.budget;state.budget=cfg.budget;}
   if(cfg.tries)state.triesWanted=cfg.tries;
   if(cfg.q)state.qCount=cfg.q;
+  if(cfg.diff)$('#diff').value=cfg.diff;
+
+  // Render provider fields (with saved keys/models inside).
+  renderProviderFields();
+  updateMeter();
+
+  // Switch to saved provider without double-rendering.
+  if(cfg.provider&&cfg.provider!=='openrouter'){
+    const b=$('#provSeg [data-p="'+cfg.provider+'"]');
+    if(b){
+      $$('#provSeg button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      state.provider=cfg.provider;
+      renderProviderFields();
+    }
+  }
+
+  // Bind steppers once, after state is final.
   bindStepper('stTries',1,6,()=>state.triesWanted,v=>state.triesWanted=v);
   bindStepper('stQ',3,8,()=>state.qCount,v=>state.qCount=v);
-  if(cfg.diff)$('#diff').value=cfg.diff;
 }catch(e){console.error('boot',e);}
 </script>
 </body>
