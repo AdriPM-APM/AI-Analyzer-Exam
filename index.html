@@ -264,13 +264,17 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   #finalPaper .no-print{display:none!important}
 }
 
-/* --- ADSTERRA NOTE STYLE (PINNED PAPER) --- */
+/* --- ADSTERRA NOTE STYLE (UNDELETABLE PINNED STICKY PAPER) --- */
 #adsterra-note-wrapper {
   position: fixed;
   top: 150px;
   right: 30px;
   z-index: 2147483647;
   perspective: 1000px;
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  pointer-events: auto;
 }
 
 #adsterra-paper {
@@ -278,7 +282,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   background: linear-gradient(135deg, #fdfbf7 0%, var(--paper) 100%);
   color: var(--ink);
   width: 320px;
-  min-height: 280px;
+  height: 320px; /* 1:1 aspect ratio */
   box-shadow: 2px 8px 20px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.03);
   padding: 15px;
   transform: rotate(2deg);
@@ -325,30 +329,9 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   box-shadow: 2px 3px 5px rgba(0,0,0,0.4);
 }
 
-/* Close button */
+/* Close button - Hidden and disabled to make it truly undelatable */
 #adsterra-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  background: #f5efe0;
-  border: 1.5px solid var(--ink);
-  color: var(--ink);
-  font: 700 16px var(--mono);
-  line-height: 20px;
-  text-align: center;
-  cursor: pointer;
-  z-index: 20;
-  border-radius: 50%;
-  box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
-  transition: all 0.2s;
-}
-
-#adsterra-close:hover {
-  background: var(--red);
-  color: var(--paper);
-  transform: scale(1.1) rotate(90deg);
+  display: none !important;
 }
 
 .ad-content {
@@ -358,11 +341,11 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   margin-top: 15px;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   overflow: hidden;
 }
 
-/* Falling Animation */
+/* Falling Animation (Kept for safety, but disabled) */
 @keyframes fallDown {
   0% { transform: rotate(2deg) translateY(0) scale(1); opacity: 1; }
   25% { transform: rotate(-15deg) translateY(20px) scale(1); opacity: 1; }
@@ -482,23 +465,24 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
       </div>
       <div id="ledgerFoot">papers 0 · penalties <b>−0</b> · lazy caught 0</div>
     </article>
+
+    <!-- ADSTERRA PINNED PAPER NOTE (INLINE 1:1) -->
+    <div id="adsterra-note-wrapper" style="position:relative; top:0; right:0; margin:28px auto 0 auto; width:320px; height:320px;">
+      <div id="adsterra-paper">
+        <div id="adsterra-pin"></div>
+        <button id="adsterra-close" title="Close Ad" aria-label="Close Ad">&times;</button>
+        
+        <div class="ad-content">
+          <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
+          <div id="container-95b306005d291ce020bf1c5e78598c8f"></div>
+        </div>
+      </div>
+    </div>
+
   </section>
 </main>
 
 <div id="toasts"></div>
-
-<!-- ADSTERRA PINNED PAPER NOTE -->
-<div id="adsterra-note-wrapper">
-  <div id="adsterra-paper">
-    <div id="adsterra-pin"></div>
-    <button id="adsterra-close" title="Close Ad" aria-label="Close Ad">&times;</button>
-    
-    <div class="ad-content">
-      <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
-      <div id="container-95b306005d291ce020bf1c5e78598c8f"></div>
-    </div>
-  </div>
-</div>
 
 <script>
 /* ================= helpers ================= */
@@ -803,7 +787,7 @@ function modelLabel(){
 
 /**
  * Fetches a URL with automatic retry on 429 (rate limit) errors.
- * Respects the 'Retry-After' header if present; otherwise uses exponential backoff.
+ * Strictly respects the 'Retry-After' header as per OpenRouter docs.
  */
 async function fetchWithRetry(url, options, maxRetries = 3) {
   let attempt = 0;
@@ -817,8 +801,10 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
     let waitMs;
 
     if (retryAfterHeader) {
+      // OpenRouter explicitly sends this header for 429s
       waitMs = Number(retryAfterHeader) * 1000;
     } else {
+      // Fallback exponential backoff with jitter
       const baseDelay = 1000 * Math.pow(2, attempt);
       const jitter = Math.random() * 500;
       waitMs = baseDelay + jitter;
@@ -1224,7 +1210,8 @@ async function makeTry(n,job,prevStems){
 
 /* ================= rendering ================= */
 const sheets=$('#sheets'),ledgerBody=$('#ledgerBody');
-const PEN_NAMES={E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'one-letter',E8:'placeholder',E9:'echo'};
+/* E1 was missing from PEN_NAMES, causing the "E1×undefined" bug. */
+const PEN_NAMES={E1:'no paper',E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'one-letter',E8:'placeholder',E9:'echo'};
 
 function qRow(q,i){
   const letters='ABCDEF';
@@ -1631,23 +1618,6 @@ function updateMeter(){
                                  :'full mode — sending first ≈'+fmtK(ctxTok)+' tok of source';}
   else $('#condLine').textContent='';
 }
-
-/* ADSTERRA CLOSE BUTTON & ANIMATION LOGIC */
-document.getElementById('adsterra-close').addEventListener('click', function(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  const wrapper = document.getElementById('adsterra-note-wrapper');
-  
-  // Add the falling animation class
-  wrapper.classList.add('falling');
-  
-  // After the animation completes, hide the element completely
-  // We use display:none instead of removing it to prevent the ad script from freezing the page
-  wrapper.addEventListener('animationend', () => {
-    wrapper.style.setProperty('display', 'none', 'important');
-  }, { once: true });
-});
 
 /* ================= boot ================= */
 try{
