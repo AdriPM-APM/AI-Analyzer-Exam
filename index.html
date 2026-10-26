@@ -264,35 +264,22 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   #finalPaper .no-print{display:none!important}
 }
 
-/* --- ADSTERRA NOTE STYLE (UNDELETABLE PINNED STICKY PAPER) --- */
-#adsterra-note-wrapper {
-  position: fixed;
-  top: 150px;
-  right: 30px;
-  z-index: 2147483647;
-  perspective: 1000px;
-  user-select: none;
-  -webkit-user-select: none;
-  -ms-user-select: none;
-  pointer-events: auto;
-}
-
-#adsterra-paper {
+/* ==========================================================================
+   ADSTERRA PINNED PAPER STYLES
+   ========================================================================== */
+.adsterra-paper {
   position: relative;
   background: linear-gradient(135deg, #fdfbf7 0%, var(--paper) 100%);
   color: var(--ink);
-  width: 320px;
-  height: 320px; /* 1:1 aspect ratio */
   box-shadow: 2px 8px 20px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.03);
   padding: 15px;
-  transform: rotate(2deg);
-  transition: transform 0.2s;
   display: flex;
   flex-direction: column;
+  border: 1px solid rgba(0,0,0,0.1);
 }
 
 /* Subtle paper texture */
-#adsterra-paper::before {
+.adsterra-paper::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -302,7 +289,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
 }
 
 /* The Pushpin */
-#adsterra-pin {
+.adsterra-pin {
   position: absolute;
   top: -14px;
   left: 50%;
@@ -315,7 +302,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   z-index: 10;
 }
 
-#adsterra-pin::after {
+.adsterra-pin::after {
   content: '';
   position: absolute;
   bottom: -10px;
@@ -329,12 +316,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   box-shadow: 2px 3px 5px rgba(0,0,0,0.4);
 }
 
-/* Close button - Hidden and disabled to make it truly undelatable */
-#adsterra-close {
-  display: none !important;
-}
-
-.ad-content {
+.adsterra-content {
   position: relative;
   z-index: 1;
   flex: 1;
@@ -345,20 +327,79 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   overflow: hidden;
 }
 
-/* Falling Animation (Kept for safety, but disabled) */
-@keyframes fallDown {
-  0% { transform: rotate(2deg) translateY(0) scale(1); opacity: 1; }
-  25% { transform: rotate(-15deg) translateY(20px) scale(1); opacity: 1; }
-  100% { transform: rotate(65deg) translateY(120vh) scale(0.6); opacity: 0; }
+/* --- FIXED CLOSABLE AD (Right Side) --- */
+#adsterra-fixed-wrapper {
+  position: fixed;
+  top: 150px;
+  right: 30px;
+  z-index: 2147483647;
+  width: 320px;
+  height: 320px;
+  perspective: 1000px;
+}
+
+#adsterra-fixed-wrapper .adsterra-paper {
+  width: 100%;
+  height: 100%;
+  transform: rotate(2deg);
+  transition: transform 0.2s;
+}
+
+#adsterra-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: #f5efe0;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  font: 700 16px var(--mono);
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 20;
+  border-radius: 50%;
+  box-shadow: 1px 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.2s;
+}
+
+#adsterra-close-btn:hover {
+  background: var(--red);
+  color: var(--paper);
+  transform: scale(1.1) rotate(90deg);
+}
+
+/* Falling Animation */
+@keyframes dropAndSpin {
+  0% { transform: rotate(2deg) translateY(0) translateX(0) scale(1); opacity: 1; }
+  20% { transform: rotate(-10deg) translateY(20px) translateX(-10px) scale(1); opacity: 1; }
+  100% { transform: rotate(70deg) translateY(120vh) translateX(50px) scale(0.6); opacity: 0; }
 }
 
 .falling {
-  animation: fallDown 1.5s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: dropAndSpin 1.8s cubic-bezier(0.4, 0, 1, 1) forwards;
   pointer-events: none;
 }
 
+/* --- UNDELETABLE INLINE AD (After Results) --- */
+#adsterra-inline-wrapper {
+  display: none; /* Hidden until report generates */
+  justify-content: center;
+  margin: 40px auto;
+  width: 100%;
+  max-width: 920px;
+}
+
+#adsterra-inline-wrapper .adsterra-paper {
+  width: 350px;
+  height: 350px; /* 1:1 ratio */
+  transform: rotate(-1deg);
+}
+
+/* Hide fixed ad on smaller screens so it doesn't block the UI */
 @media (max-width: 1550px) {
-  #adsterra-note-wrapper {
+  #adsterra-fixed-wrapper {
     display: none !important;
   }
 }
@@ -466,13 +507,11 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
       <div id="ledgerFoot">papers 0 · penalties <b>−0</b> · lazy caught 0</div>
     </article>
 
-    <!-- ADSTERRA PINNED PAPER NOTE (INLINE 1:1) -->
-    <div id="adsterra-note-wrapper" style="position:relative; top:0; right:0; margin:28px auto 0 auto; width:320px; height:320px;">
-      <div id="adsterra-paper">
-        <div id="adsterra-pin"></div>
-        <button id="adsterra-close" title="Close Ad" aria-label="Close Ad">&times;</button>
-        
-        <div class="ad-content">
+    <!-- UNDELETABLE INLINE AD (Hidden until results) -->
+    <div id="adsterra-inline-wrapper">
+      <div class="adsterra-paper">
+        <div class="adsterra-pin"></div>
+        <div class="adsterra-content">
           <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
           <div id="container-95b306005d291ce020bf1c5e78598c8f"></div>
         </div>
@@ -481,6 +520,27 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
 
   </section>
 </main>
+
+<!-- FIXED CLOSABLE AD (Right Side - Position "1") -->
+<div id="adsterra-fixed-wrapper">
+  <div class="adsterra-paper">
+    <div class="adsterra-pin"></div>
+    <button id="adsterra-close-btn" title="Close Ad" aria-label="Close Ad">&times;</button>
+    <div class="adsterra-content">
+      <!-- Adsterra Script -->
+      <script type="text/javascript">
+        atOptions = {
+          'key' : '95b306005d291ce020bf1c5e78598c8f',
+          'format' : 'iframe',
+          'height' : 250,
+          'width' : 300,
+          'params' : {}
+        };
+      </script>
+      <script type="text/javascript" src="//www.highperformanceformat.com/95b306005d291ce020bf1c5e78598c8f/invoke.js"></script>
+    </div>
+  </div>
+</div>
 
 <div id="toasts"></div>
 
@@ -519,22 +579,16 @@ const state={files:[],text:'',provider:'openrouter',thrift:true,budget:2400,
 let srcGrams=null;
 let cfg={};try{cfg=JSON.parse(localStorage.getItem('forge.cfg')||'{}');}catch(e){}
 
-/* ================= Gemini model whitelist (Updated to Gemini 3.x / 2.5) ================= */
+/* ================= Gemini model whitelist ================= */
 const VALID_GEMINI_MODELS = new Set([
-  // Gemini 3.8 Series
   'gemini-3.8-flash', 'gemini-3.8-live', 'gemini-3.8-live-extended-thinking',
   'gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts',
-  // Gemini 3.6 Series
   'gemini-3.6-flash',
-  // Gemini 3.5 Series
   'gemini-3.5-flash-lite', 'gemini-3.5-live-translate-preview',
-  // Gemini 3.1 Series
   'gemini-3.1-pro-preview', 'gemini-3.1-flash-live-preview',
   'gemini-3.1-flash-tts-preview', 'gemini-3.1-flash-lite',
   'gemini-3.1-flash-image',
-  // Gemini 3 Series
   'gemini-3-flash-preview',
-  // Gemini 2.5 Series
   'gemini-2.5-flash', 'gemini-2.5-flash-image', 'gemini-2.5-flash-lite',
   'gemini-2.5-pro', 'gemini-2.5-flash-native-audio-preview-12-2025',
   'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'
@@ -801,10 +855,8 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
     let waitMs;
 
     if (retryAfterHeader) {
-      // OpenRouter explicitly sends this header for 429s
       waitMs = Number(retryAfterHeader) * 1000;
     } else {
-      // Fallback exponential backoff with jitter
       const baseDelay = 1000 * Math.pow(2, attempt);
       const jitter = Math.random() * 500;
       waitMs = baseDelay + jitter;
@@ -1210,8 +1262,8 @@ async function makeTry(n,job,prevStems){
 
 /* ================= rendering ================= */
 const sheets=$('#sheets'),ledgerBody=$('#ledgerBody');
-/* E1 was missing from PEN_NAMES, causing the "E1×undefined" bug. */
-const PEN_NAMES={E1:'no paper',E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'one-letter',E8:'placeholder',E9:'echo'};
+/* FIX: E1 missing from PEN_NAMES caused "E1×undefined". Added fallbacks. */
+const PEN_NAMES={E1:'void',E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'one-letter',E8:'placeholder',E9:'echo'};
 
 function qRow(q,i){
   const letters='ABCDEF';
@@ -1258,7 +1310,8 @@ function ledgerRow(run){
   if(!run.void){
     const g={};run.audit.items.forEach(i=>{if(i.pts>0)g[i.code]=(g[i.code]||0)+i.pts;});
     const ks=Object.keys(g);
-    ded=ks.length?ks.map(c=>c+'×'+PEN_NAMES[c]+' −'+g[c]).join(' · '):'clean';
+    // FIXED: Using fallback for PEN_NAMES in case of missing codes
+    ded=ks.length?ks.map(c=>c+'×'+(PEN_NAMES[c]||c)+' −'+g[c]).join(' · '):'clean';
     sc=Math.round(run.audit.score);vd=run.audit.verdict;}
   else ded=esc(clip(run.note||'',46));
   tr.innerHTML='<span>Nº'+run.n+'</span><span>'+kind+'</span><span>'+(run.void?'0':run.questions.length)+'</span>'+
@@ -1522,6 +1575,10 @@ function buildReport(elapsed){
   $('#printPaper').onclick=()=>window.print();
   $('#releaseFinal').onclick=releaseFinalPdf;
   $('#releaseAll').onclick=releaseAllPdfs;
+  
+  // Show the undeletable inline ad after results are generated
+  document.getElementById('adsterra-inline-wrapper').style.display = 'flex';
+
   rep.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
@@ -1530,7 +1587,9 @@ function clearDesk(){
   state.runs=[];state.replacedN=new Set();state.spent=0;
   sheets.innerHTML='';ledgerBody.innerHTML='<div class="lempty">— no trials graded yet —</div>';ledgerFoot();
   $$('#deskcol .report').forEach(e=>e.remove());
-  $('#emptyNote').style.display=state.text?'none':'block';updateMeter();}
+  $('#emptyNote').style.display=state.text?'none':'block';updateMeter();
+  document.getElementById('adsterra-inline-wrapper').style.display = 'none';
+}
  $('#clearDesk').onclick=()=>{if(state.running)return;clearDesk();slip('Desk cleared. Fresh paper on the tray.');};
 
 let _statusT=null,_forgeT0=0,_statusLabel='';
@@ -1618,6 +1677,22 @@ function updateMeter(){
                                  :'full mode — sending first ≈'+fmtK(ctxTok)+' tok of source';}
   else $('#condLine').textContent='';
 }
+
+/* FIXED CLOSABLE AD ANIMATION */
+document.getElementById('adsterra-close-btn').addEventListener('click', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const wrapper = document.getElementById('adsterra-fixed-wrapper');
+  
+  // Add the falling animation class
+  wrapper.classList.add('falling');
+  
+  // After the animation completes, hide the element permanently
+  wrapper.addEventListener('animationend', () => {
+    wrapper.style.setProperty('display', 'none', 'important');
+  }, { once: true });
+});
 
 /* ================= boot ================= */
 try{
