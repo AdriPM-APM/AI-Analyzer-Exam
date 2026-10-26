@@ -370,16 +370,47 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   transform: scale(1.1) rotate(90deg);
 }
 
-/* Falling Animation */
-@keyframes dropAndSpin {
-  0% { transform: rotate(2deg) translateY(0) translateX(0) scale(1); opacity: 1; }
-  20% { transform: rotate(-10deg) translateY(20px) translateX(-10px) scale(1); opacity: 1; }
-  100% { transform: rotate(70deg) translateY(120vh) translateX(50px) scale(0.6); opacity: 0; }
+/* Realistic falling — gravity is baked into the keyframes
+   (fall distance grows ∝ t², linear timing), the sheet tears off
+   its pin, tumbles in 3D and drifts sideways as it drops */
+@keyframes paperTearFall {
+  0%   { transform: perspective(900px) rotate(2deg) translate3d(0,0,0) rotateX(0deg) rotateY(0deg); opacity: 1; }
+  7%   { transform: perspective(900px) rotate(-6deg) translate3d(-5px,3px,0) rotateX(4deg) rotateY(-3deg); opacity: 1; }
+  14%  { transform: perspective(900px) rotate(8deg) translate3d(4px,2.5vh,0) rotateX(-6deg) rotateY(5deg); }
+  26%  { transform: perspective(900px) rotate(-16deg) translate3d(-14px,8vh,0) rotateX(10deg) rotateY(-8deg); }
+  42%  { transform: perspective(900px) rotate(38deg) translate3d(20px,21vh,0) rotateX(-14deg) rotateY(12deg); }
+  58%  { transform: perspective(900px) rotate(-74deg) translate3d(-22px,40vh,0) rotateX(18deg) rotateY(-14deg); }
+  72%  { transform: perspective(900px) rotate(126deg) translate3d(16px,62vh,0) rotateX(-16deg) rotateY(10deg); }
+  85%  { transform: perspective(900px) rotate(196deg) translate3d(-12px,87vh,0) rotateX(12deg) rotateY(-8deg); opacity: 1; }
+  94%  { transform: perspective(900px) rotate(248deg) translate3d(9px,106vh,0) rotateX(-8deg) rotateY(5deg); opacity: .9; }
+  100% { transform: perspective(900px) rotate(288deg) translate3d(22px,120vh,0) rotateX(4deg) rotateY(-3deg); opacity: 0; }
 }
 
 .falling {
-  animation: dropAndSpin 1.8s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: paperTearFall 2.2s linear forwards;
   pointer-events: none;
+  will-change: transform, opacity;
+}
+.falling .adsterra-paper { transform: none !important; }
+
+/* the pin pops out of the board and drops away separately */
+.falling .adsterra-pin { animation: pinPop .5s cubic-bezier(.3,.6,.4,1) forwards; }
+@keyframes pinPop {
+  0%   { transform: translateX(-50%) translateY(0) rotate(0deg); opacity: 1; }
+  45%  { transform: translateX(-50%) translateY(-10px) rotate(-18deg); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-90px) rotate(60deg); opacity: 0; }
+}
+
+/* graceful note when the ad network returns nothing */
+.adsterra-fallback {
+  display: none;
+  place-items: center;
+  height: 100%;
+  font: italic 500 13.5px var(--serif);
+  color: var(--ink2);
+  text-align: center;
+  padding: 14px;
+  line-height: 1.5;
 }
 
 /* --- UNDELETABLE INLINE AD (After Results) --- */
@@ -511,10 +542,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
     <div id="adsterra-inline-wrapper">
       <div class="adsterra-paper">
         <div class="adsterra-pin"></div>
-        <div class="adsterra-content">
-          <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
-          <div id="container-95b306005d291ce020bf1c5e78598c8f"></div>
-        </div>
+        <div class="adsterra-content" id="adsterra-inline-slot"></div>
       </div>
     </div>
 
@@ -526,11 +554,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   <div class="adsterra-paper">
     <div class="adsterra-pin"></div>
     <button id="adsterra-close-btn" title="Close Ad" aria-label="Close Ad">&times;</button>
-    <div class="adsterra-content">
-      <!-- Using the reliable native banner script here too -->
-      <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
-      <div id="container-95b306005d291ce020bf1c5e78598c8f-fixed"></div>
-    </div>
+    <div class="adsterra-content" id="adsterra-fixed-slot"></div>
   </div>
 </div>
 
@@ -571,32 +595,53 @@ const state={files:[],text:'',provider:'openrouter',thrift:true,budget:2400,
 let srcGrams=null;
 let cfg={};try{cfg=JSON.parse(localStorage.getItem('forge.cfg')||'{}');}catch(e){}
 
-/* ================= Gemini model whitelist (Updated to latest endpoints) ================= */
+/* ================= Gemini models (curated defaults + live catalogue fetch) =================
+   generateContent on v1beta works for every text model; instead of hard-failing on
+   unknown names we warn softly and let the API answer. Press "list live models"
+   to pull the real catalogue straight from Google for your key. */
 const VALID_GEMINI_MODELS = new Set([
-  // Gemini 4 Series
+  // Gemini 4 series
   'gemini-4-argon',
-  // Gemini 3.8 Series
-  'gemini-3.8-flash', 'gemini-3.8-live', 'gemini-3.8-live-extended-thinking',
-  'gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts',
-  // Gemini 3.7 Series
-  'gemini-3.7-flash',
-  // Gemini 3.6 Series
-  'gemini-3.6-flash',
-  // Gemini 3.5 Series
+  // Gemini 3.8 series
+  'gemini-3.8-flash', 'gemini-3.8-live',
+  // Gemini 3.7 / 3.6
+  'gemini-3.7-flash', 'gemini-3.6-flash',
+  // Gemini 3.5
   'gemini-3.5-flash', 'gemini-3.5-flash-lite',
-  // Gemini 3.1 Series
-  'gemini-3.1-pro-preview', 'gemini-3.1-flash-live-preview',
-  'gemini-3.1-flash-tts-preview', 'gemini-3.1-flash-lite',
-  'gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image',
-  // Gemini 3 Series
-  'gemini-3-flash-preview',
-  // Nano Banana Series
-  'gemini-nano-banana-2.1', 'gemini-nano-banana-2', 'gemini-nano-banana-pro'
+  // Gemini 3.1 / 3
+  'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview',
+  // Gemini 2.5 (still served)
+  'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'
 ]);
+let EXTRA_GEMINI_MODELS = []; // filled by fetchGeminiModels()
+function geminiModelOptions(){
+  return [...new Set([...VALID_GEMINI_MODELS, ...EXTRA_GEMINI_MODELS])];
+}
 function validateGeminiModel(m){
-  if(!VALID_GEMINI_MODELS.has(m)){
-    throw new Error('Invalid Gemini model “'+m+'”. Use one of: '+[...VALID_GEMINI_MODELS].join(', '));
+  if(!VALID_GEMINI_MODELS.has(m) && EXTRA_GEMINI_MODELS.indexOf(m)<0){
+    slip('Heads up: “'+m+'” is not on the known Gemini list. If it 404s, press “list live models”.');
   }
+}
+async function fetchGeminiModels(){
+  captureFields();
+  const key=((cfg.keys||{}).gmKey||'').trim();
+  if(!key){slip('Paste your Gemini API key first — then the desk can pull the live catalogue.','red');return;}
+  const btn=$('#listModels');if(btn){btn.disabled=true;btn.textContent='listing…';}
+  try{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
+      {headers:{'x-goog-api-key':key}});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error((d&&d.error&&d.error.message)||('HTTP '+r.status));
+    const names=(d.models||[])
+      .filter(m=>(m.supportedGenerationMethods||[]).indexOf('generateContent')>=0)
+      .map(m=>String(m.name||'').replace(/^models\//,''))
+      .filter(n=>n&&!/tts|live|embed|aqa|image|veo|lyria|robotics|omni|native-audio/i.test(n));
+    EXTRA_GEMINI_MODELS=uniqBy(names,x=>x);
+    const dl=document.getElementById('geminiModels');
+    if(dl)dl.innerHTML=geminiModelOptions().map(m=>'<option value="'+m+'">').join('');
+    slip('Live catalogue: '+EXTRA_GEMINI_MODELS.length+' text models added to the dropdown.','green');
+  }catch(e){slip('Model list failed: '+e.message,'red');}
+  finally{if(btn){btn.disabled=false;btn.textContent='list live models';}}
 }
 
 /* ---------- memoized condensate + doc stats ---------- */
@@ -791,11 +836,12 @@ function renderProviderFields(){
       '<div class="field"><label>API key</label><input id="gmKey" type="password" placeholder="AIza…" value="'+esc(K.gmKey||'')+'"></div>'+
       '<div class="field"><label>Model</label>'+
         '<input id="gmModel" type="text" list="geminiModels" value="'+esc(M.gmModel||'gemini-3.8-flash')+'" placeholder="gemini-3.8-flash">'+
-        '<datalist id="geminiModels">'+[...VALID_GEMINI_MODELS].map(m=>'<option value="'+m+'">').join('')+'</datalist>'+
+        '<datalist id="geminiModels">'+geminiModelOptions().map(m=>'<option value="'+m+'">').join('')+'</datalist>'+
       '</div>'+
       '<p class="hint">Free keys at aistudio.google.com — calls go straight from this page.</p>'+
-      '<p class="hint warn">Use a valid model like <code>gemini-3.8-flash</code>. Invalid names cause a 400 error.</p>'+
-      '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>';
+      '<p class="hint warn">If a model 404s, press “list live models” — the desk pulls the live catalogue straight from Google for your key.</p>'+
+      '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>'+
+      '<button type="button" class="btn2" id="listModels" style="margin-top:8px;margin-left:6px">list live models</button>';
   }else if(state.provider==='ollama'){
     w.innerHTML=
       '<div class="field"><label>Base URL</label><input id="olBase" type="text" value="'+esc(M.olBase||'http://localhost:11434')+'"></div>'+
@@ -808,6 +854,8 @@ function renderProviderFields(){
   w.querySelectorAll('input').forEach(i=>i.addEventListener('change',saveCfg));
   const tb=w.querySelector('#testConn');
   if(tb) tb.addEventListener('click',testConnection);
+  const lb=w.querySelector('#listModels');
+  if(lb) lb.addEventListener('click',fetchGeminiModels);
 }
 
 function captureFields(){
@@ -874,8 +922,8 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
   return fetch(url, options);
 }
 
-/* ================= chat function with SSE streaming support ================= */
-async function chat(sys, usr, temp, maxTok, stream = false) {
+/* ================= chat function (SSE streaming + optional strict-JSON mode) ================= */
+async function chat(sys, usr, temp, maxTok, stream = false, jsonMode = false) {
   const ctl = new AbortController();
   const to = setTimeout(() => ctl.abort(), 60000);
   try {
@@ -901,8 +949,8 @@ async function chat(sys, usr, temp, maxTok, stream = false) {
         }
       );
       if (!r.ok) {
-        const d = await r.json();
-        const msg = (d && d.error && d.error.message) || ('HTTP ' + r.status);
+        let d=null;try{d=await r.json();}catch(e){}
+        const msg=(d&&d.error&&d.error.message)||('HTTP '+r.status);
         throw new Error('OpenRouter API error: ' + msg);
       }
       if (stream) {
@@ -938,52 +986,33 @@ async function chat(sys, usr, temp, maxTok, stream = false) {
       const key = $('#gmKey').value.trim();
       if (!key) throw new Error('Gemini API key is missing.');
       validateGeminiModel(model);
-      
-      // Gemini 4 Argon uses the new interactions endpoint
-      if (model === 'gemini-4-argon') {
-        const r = await fetchWithRetry('https://generativelanguage.googleapis.com/v1beta/interactions', {
-          signal: ctl.signal,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': key
-          },
-          body: JSON.stringify({
-            model: model,
-            input: usr,
-            system_instruction: sys
-          })
-        });
-        if (!r.ok) {
-          const d = await r.json();
-          const msg = (d && d.error && d.error.message) || ('HTTP ' + r.status);
-          throw new Error('Gemini 4 Argon API error: ' + msg);
-        }
-        const d = await r.json();
-        // Assuming the response structure is similar to OpenAI's chat completions
-        return d.choices?.[0]?.message?.content || d.output?.text || '';
-      }
 
-      // Standard Gemini 3.x/2.5 models
-      const endpoint = stream 
-        ? 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':streamGenerateContent?alt=sse&key=' + encodeURIComponent(key)
-        : 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
+      // One endpoint for every text model (v1beta · x-goog-api-key header auth per current docs)
+      const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+        encodeURIComponent(model) +
+        (stream ? ':streamGenerateContent?alt=sse' : ':generateContent');
+
+      const body = {
+        system_instruction: { parts: [{ text: sys }] },
+        contents: [{ role: 'user', parts: [{ text: usr }] }],
+        generationConfig: { temperature: temp, maxOutputTokens: maxTok }
+      };
+      // Strict JSON mode — only when the caller actually wants JSON (exam tries),
+      // never for plain-language SA explanations.
+      if (jsonMode) body.generationConfig.responseMimeType = 'application/json';
 
       const r = await fetchWithRetry(endpoint, {
         signal: ctl.signal,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // FIXED: Using snake_case system_instruction and proper contents structure
-          system_instruction: { parts: [{ text: sys }] },
-          contents: [{ role: 'user', parts: [{ text: usr }] }],
-          generationConfig: { temperature: temp, maxOutputTokens: maxTok }
-        })
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify(body)
       });
 
       if (!r.ok) {
-        const d = await r.json();
-        const msg = (d && d.error && d.error.message) || ('HTTP ' + r.status);
+        let d=null;try{d=await r.json();}catch(e){}
+        let msg=(d&&d.error&&d.error.message)||('HTTP '+r.status);
+        if(r.status===404||/not found|not supported|invalid model/i.test(msg))
+          msg+=' — model "'+model+'" is not available for this key. Press “list live models” to see valid names.';
         throw new Error('Gemini API error: ' + msg);
       }
 
@@ -1028,8 +1057,8 @@ async function chat(sys, usr, temp, maxTok, stream = false) {
         })
       });
       if (!r.ok) {
-        const d = await r.json();
-        const msg = (typeof d.error === 'string' && d.error) || ('HTTP ' + r.status);
+        let d=null;try{d=await r.json();}catch(e){}
+        const msg=(typeof (d&&d.error)==='string' && d.error) || ((d&&d.error&&d.error.message)||('HTTP ' + r.status));
         throw new Error('Ollama API error: ' + msg);
       }
       
@@ -1240,6 +1269,23 @@ function auditTry(questions,wanted,prevStems){
       const g=ngrams(stem.replace(/_{2,}/g,' gap '),16);let hits=0;
       g.forEach(x=>{if(srcGrams.has(x))hits++;});
       if(hits>=1)pen('E5','Q'+(i+1)+' photocopied from source',10,[i]);}
+    // — warden II: distractor forensics (only when the key itself is sane) —
+    if(ch.length>=3&&q.ansIdx>=0&&q.ansIdx<ch.length){
+      const lens=ch.map(c=>norm(c).length);
+      // E10: the correct option is conspicuously the longest — gives the answer away
+      const others=lens.filter((_,j)=>j!==q.ansIdx);
+      if(lens[q.ansIdx]>=18&&others.length&&lens[q.ansIdx]>Math.max.apply(null,others)*1.6)
+        pen('E10','Q'+(i+1)+' key is the long-winded one',5,[i]);
+      // E11: repeated / near-identical options
+      if(new Set(ch.map(c=>norm(c))).size<ch.length)
+        pen('E11','Q'+(i+1)+' repeats an option',8,[i]);
+      // E12: lazy 'of the above' crutches
+      if(/\b(all|none) of the above\b/i.test(ch.join(' | ')))
+        pen('E12','Q'+(i+1)+' leans on “of the above”',10,[i]);
+      // E14: filler distractors too short to be taken seriously
+      if(others.some(l=>l>0&&l<3))
+        pen('E14','Q'+(i+1)+' filler option',4,[i]);
+    }
   });
   for(let i=0;i<questions.length;i++)for(let j=i+1;j<questions.length;j++){
     if(sets[i].length&&jaccard(sets[i],sets[j])>=0.65)pen('E4','Q'+(i+1)+' ≈ Q'+(j+1)+' duplicate',8,[i,j]);}
@@ -1247,8 +1293,11 @@ function auditTry(questions,wanted,prevStems){
   sets.forEach((ws,i)=>{if(echo.has(i))return;
     for(const ps of prevStems){if(jaccard(ws,words(ps))>=0.7){echo.add(i);pen('E9','Q'+(i+1)+' echoes an earlier try',6,[i]);break;}}});
   const valid=questions.map(q=>q.ansIdx).filter(x=>x>=0);
-  if(questions.length>=3&&valid.length===questions.length&&new Set(valid).size===1)
-    pen('E7','all keys on one letter',6,questions.map((_,i)=>i));
+  if(questions.length>=4&&valid.length===questions.length){
+    const cnt={};valid.forEach(x=>cnt[x]=(cnt[x]||0)+1);
+    if(Math.max.apply(null,Object.values(cnt))/questions.length>=0.75)
+      pen('E7','keys piled on one letter',8,questions.map((_,i)=>i));
+  }
   score=Math.max(0,Math.min(100,100-items.reduce((s,i)=>s+i.pts,0)));
   const verdict=score>=88?'GOOD':score>=70?'SHAKY':'LAZY';
   questions.forEach((q,i)=>q._flags=flags[i].map(f=>f.code+' −'+f.pts));
@@ -1269,14 +1318,14 @@ async function makeTry(n,job,prevStems){
     const ctx=th?getCondensed():state.text.slice(0,12000);
     temp=Math.min(1.1,0.65+n*0.1);
     const sys=th
-      ?'You write school exam questions. Reply ONLY a JSON array — no prose, no markdown. Each item: {"q":stem,"choices":["..","..","..",".."],"answer":0-3,"topic":"2-4 words"}.'
-      :'You are a meticulous school exam setter. Write varied, precise multiple-choice questions grounded strictly in the source. Vary question types (recall, inference, application). Never copy source sentences verbatim — rephrase. Distribute correct answers across A–D. Reply ONLY a JSON array, no prose, no markdown. Each item: {"q":stem,"choices":[4 strings],"answer":index 0-3,"topic":"2-4 words"}.';
-    let usr='SOURCE:\n'+ctx+'\n\nWrite '+state.qCount+' multiple-choice questions ('+diffWord()+').';
-    if(prevStems.length)usr+='\nDo not repeat or paraphrase these earlier stems: '+prevStems.slice(0,6).map(s=>'"'+clip(s,60)+'…"').join('; ');
-    if(job.kind==='reform')usr+='\nThe previous attempt was rejected as lazy. Be complete and original.';
-    const maxTok=th?state.qCount*130+250:state.qCount*260+450;
+      ?'You write school exam questions. Reply ONLY a JSON array — no prose, no markdown. Each item: {"q":stem,"choices":["..","..","..",".."],"answer":0-3,"topic":"2-4 words"}. Rules: 4 choices each; exactly one unambiguous correct answer; distractors are plausible — common misconceptions, near-miss numbers, similar terms — never joke answers; never “all/none of the above”; vary which letter is correct; each question targets a different fact from the source.'
+      :'You are a meticulous, experienced exam setter. Write varied, precise multiple-choice questions grounded strictly in the source. Rules: match the requested difficulty (recall, comprehension, inference, application); each question targets a distinct fact or concept so together they cover the breadth of the source; stems are self-contained and unambiguous; exactly one correct answer; distractors are plausible — common misconceptions, near-miss figures, similar-sounding terms — but clearly wrong to a careful reader; never use “all of the above” / “none of the above”; never copy source sentences verbatim — rephrase; distribute correct answers roughly evenly across A–D. Reply ONLY a JSON array, no prose, no markdown. Each item: {"q":stem,"choices":[4 strings],"answer":index 0-3,"topic":"2-4 words"}.';
+    let usr='SOURCE:\n'+ctx+'\n\nWrite '+state.qCount+' multiple-choice questions ('+diffWord()+'). Spread them across different parts of the source.';
+    if(prevStems.length)usr+='\nDo not repeat or paraphrase these earlier stems: '+prevStems.slice(0,6).map(s=>'"'+clip(s,60)+'…”').join('; ');
+    if(job.kind==='reform')usr+='\nThe previous attempt was rejected as lazy'+(job.why?' for: '+job.why:'')+'. Avoid these faults and be complete and original.';
+    const maxTok=th?state.qCount*150+300:state.qCount*300+600;
     tok.sent=Math.round((sys.length+usr.length)/4);
-    raw=await chat(sys,usr,temp,maxTok, true);
+    raw=await chat(sys,usr,temp,maxTok, true, true);
     tok.got=Math.round((raw||'').length/4);
     state.spent+=tok.sent+tok.got;
   }
@@ -1290,7 +1339,7 @@ async function makeTry(n,job,prevStems){
 /* ================= rendering ================= */
 const sheets=$('#sheets'),ledgerBody=$('#ledgerBody');
 /* FIX: E1 missing from PEN_NAMES caused "E1×undefined". Added fallbacks. */
-const PEN_NAMES={E1:'void',E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'one-letter',E8:'placeholder',E9:'echo'};
+const PEN_NAMES={E1:'void',E2:'short',E3:'thin stem',E4:'dup',E5:'photocopy',E6:'bad key',E7:'letter pile',E8:'placeholder',E9:'echo',E10:'tells the answer',E11:'repeated option',E12:'of-the-above',E13:'key drift',E14:'filler option'};
 
 function qRow(q,i){
   const letters='ABCDEF';
@@ -1603,8 +1652,11 @@ function buildReport(elapsed){
   $('#releaseFinal').onclick=releaseFinalPdf;
   $('#releaseAll').onclick=releaseAllPdfs;
   
-  // Show the undeletable inline ad after results are generated
+  // Undeletable results ad: mounted fresh at visibility time so it always fills.
+  // The pinned ad yields the desk — it falls off, one notice stays active.
   document.getElementById('adsterra-inline-wrapper').style.display = 'flex';
+  mountAd('#adsterra-inline-slot');
+  fallFixedAd();
 
   rep.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -1615,7 +1667,11 @@ function clearDesk(){
   sheets.innerHTML='';ledgerBody.innerHTML='<div class="lempty">— no trials graded yet —</div>';ledgerFoot();
   $$('#deskcol .report').forEach(e=>e.remove());
   $('#emptyNote').style.display=state.text?'none':'block';updateMeter();
-  document.getElementById('adsterra-inline-wrapper').style.display = 'none';
+  const iw=document.getElementById('adsterra-inline-wrapper');
+  if(iw){iw.style.display='none';const islot=document.getElementById('adsterra-inline-slot');
+    if(islot){islot.dataset.retried='';islot.innerHTML='';}}
+  const fslot=document.getElementById('adsterra-fixed-slot');
+  if(fslot)fslot.dataset.retried='';
 }
  $('#clearDesk').onclick=()=>{if(state.running)return;clearDesk();slip('Desk cleared. Fresh paper on the tray.');};
 
@@ -1653,7 +1709,8 @@ async function forge(){
       state.runs.push(run);renderRun(run);ledgerRow(run);updateMeter();
       if(!run.void&&run.audit.verdict==='LAZY'&&job.kind==='first'&&n<jobsMax){
         state.replacedN.add(run.n);markReforming(run.n);
-        queue.push({kind:'reform',of:n});
+        // tell the next try exactly why the warden flunked the last one
+        queue.push({kind:'reform',of:n,why:run.audit.items.map(i=>i.code+' '+i.detail).join('; ')});
         slip('Trial Nº '+run.n+' stamped LAZY ('+Math.round(run.audit.score)+'/100) — re-forming.','red');}
       await sleep(160);
     }
@@ -1695,7 +1752,7 @@ function bindStepper(id,min,max,get,set){
 function updateMeter(){
   const th=state.thrift,q=state.qCount;
   const ctxChars=state.text?(th?getCondensed().length:Math.min(state.text.length,12000)):0;
-  const ctxTok=Math.ceil(ctxChars/4),outTok=q*(th?130:260)+(th?250:450);
+  const ctxTok=Math.ceil(ctxChars/4),outTok=q*(th?150:300)+(th?300:600);
   $('#mCtx').textContent=fmtK(ctxTok);$('#mOut').textContent=fmtK(outTok);
   $('#mReq').textContent=fmtK(ctxTok+outTok);$('#mSpent').textContent=fmtK(Math.round(state.spent));
   $('#budgetOut').textContent='context cap '+state.budget.toLocaleString()+' chars';
@@ -1705,21 +1762,76 @@ function updateMeter(){
   else $('#condLine').textContent='';
 }
 
-/* FIXED CLOSABLE AD ANIMATION */
-document.getElementById('adsterra-close-btn').addEventListener('click', function(e) {
+/* ================= ad desk (Adsterra availability manager) =================
+   One invocation key can only fill ONE container on the page, and the script
+   scans for #container-<key> only at the moment it runs. So:
+   • the slot that is actually visible mounts a fresh, cache-busted script;
+   • the other slot is cleared — no duplicate containers, no silent blanks;
+   • if the network returns nothing, we retry once, then show a graceful note. */
+const AD_KEY='95b306005d291ce020bf1c5e78598c8f';
+const AD_SRC='https://bauval.org/21/'+AD_KEY;
+const adState={fixedClosed:false};
+
+function fillSlot(slot){
+  // one live container in the whole document, inside the requested slot
+  document.querySelectorAll('.adsterra-live').forEach(el=>{if(el.parentElement!==slot)el.remove();});
+  slot.innerHTML='<div id="container-'+AD_KEY+'" class="adsterra-live"></div>'+
+    '<div class="adsterra-fallback">sponsor’s notice — between campaigns right now</div>';
+  const s=document.createElement('script');
+  s.async=true;
+  s.setAttribute('data-cfasync','false');
+  s.src=AD_SRC+'?cb='+Date.now();
+  slot.appendChild(s);
+}
+
+function showAdFallback(slot){
+  const f=slot.querySelector('.adsterra-fallback');
+  if(f)f.style.display='grid';
+}
+
+function mountAd(slotSel){
+  const slot=document.querySelector(slotSel);
+  if(!slot)return;
+  slot.dataset.retried='';
+  fillSlot(slot);
+  // availability guard: nothing rendered after 6s → one retry → graceful note
+  setTimeout(()=>{
+    const c=slot.querySelector('.adsterra-live');
+    if(c&&c.childElementCount===0){
+      if(slot.dataset.retried==='1'){showAdFallback(slot);return;}
+      slot.dataset.retried='1';
+      fillSlot(slot);
+      setTimeout(()=>{
+        const c2=slot.querySelector('.adsterra-live');
+        if(c2&&c2.childElementCount===0)showAdFallback(slot);
+      },6000);
+    }
+  },6000);
+}
+
+/* realistic fall: sheet tears off its pin, tumbles and drops off the desk */
+function fallFixedAd(){
+  const w=document.getElementById('adsterra-fixed-wrapper');
+  if(!w||w.classList.contains('falling'))return;
+  if(getComputedStyle(w).display==='none')return;
+  w.classList.add('falling');
+  let done=false;
+  const finish=()=>{
+    if(done)return;done=true;
+    w.style.setProperty('display','none','important');
+    w.classList.remove('falling');
+    adState.fixedClosed=true;
+  };
+  w.addEventListener('animationend',finish,{once:true});
+  setTimeout(finish,2500); // safety net in case animationend never fires
+}
+
+document.getElementById('adsterra-close-btn').addEventListener('click',function(e){
   e.preventDefault();
   e.stopPropagation();
-  
-  const wrapper = document.getElementById('adsterra-fixed-wrapper');
-  
-  // Add the falling animation class
-  wrapper.classList.add('falling');
-  
-  // After the animation completes, hide the element permanently
-  wrapper.addEventListener('animationend', () => {
-    wrapper.style.setProperty('display', 'none', 'important');
-  }, { once: true });
+  fallFixedAd();
 });
+
 
 /* ================= boot ================= */
 try{
@@ -1744,6 +1856,9 @@ try{
 
   bindStepper('stTries',1,6,()=>state.triesWanted,v=>state.triesWanted=v);
   bindStepper('stQ',3,8,()=>state.qCount,v=>state.qCount=v);
+
+  // pinned ad mounts only when its paper is actually displayed (wide desks)
+  if(window.innerWidth>1550){mountAd('#adsterra-fixed-slot');}
 }catch(e){console.error('boot',e);}
 </script>
 </body>
