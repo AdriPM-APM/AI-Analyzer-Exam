@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- ✅ FIX: quiet the benign Permissions-Policy warnings where possible -->
 <meta http-equiv="Permissions-Policy" content="private-aggregation=(), attribution-reporting=(), interest-cohort=()">
 <title>The Examination Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,9 +17,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 ::selection{background:var(--red);color:var(--paper)}
 html{scroll-behavior:smooth}
-body{
-  background:var(--desk); color:var(--paper); font-family:var(--serif); min-height:100vh;
-}
+body{background:var(--desk); color:var(--paper); font-family:var(--serif); min-height:100vh;}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;opacity:.55;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}
 button{cursor:pointer;font-family:inherit}
@@ -266,6 +263,52 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   #finalPaper{position:fixed;inset:0;box-shadow:none;transform:none;background:#fff;padding:26px 34px}
   #finalPaper .no-print{display:none!important}
 }
+
+/* --- ADSTERRA SIDEBAR --- */
+#adsterra-wrapper {
+  position: fixed;
+  top: 120px;
+  right: 20px;
+  width: 300px;
+  height: 600px;
+  z-index: 2147483647;
+  background: var(--desk);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  display: flex;
+  flex-direction: column;
+}
+
+#adsterra-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 28px;
+  height: 28px;
+  background: var(--red);
+  color: var(--paper);
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  font: 700 14px var(--mono);
+  cursor: pointer;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  transition: transform 0.1s;
+}
+
+#adsterra-close:hover {
+  transform: scale(1.1);
+  background: #d32f2f;
+}
+
+@media (max-width: 1550px) {
+  #adsterra-wrapper {
+    display: none !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -289,7 +332,6 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
 </header>
 
 <main>
-  <!-- ============ JOB TICKET ============ -->
   <aside class="ticket">
     <div class="holes"><span></span><span></span></div>
 
@@ -355,7 +397,6 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
     </div>
   </aside>
 
-  <!-- ============ THE DESK ============ -->
   <section class="deskcol" id="deskcol">
     <div class="empty" id="emptyNote">
       <div class="h">Drop a document on the ticket — the warden is watching.</div>
@@ -375,6 +416,15 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
 </main>
 
 <div id="toasts"></div>
+
+<!-- ADSTERRA CONTAINER -->
+<div id="adsterra-wrapper">
+  <button id="adsterra-close" title="Close Ad" aria-label="Close Ad">&times;</button>
+  <div style="flex: 1; position: relative; overflow: hidden;">
+    <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
+    <div id="container-95b306005d291ce020bf1c5e78598c8f"></div>
+  </div>
+</div>
 
 <script>
 /* ================= helpers ================= */
@@ -411,16 +461,35 @@ const state={files:[],text:'',provider:'openrouter',thrift:true,budget:2400,
 let srcGrams=null;
 let cfg={};try{cfg=JSON.parse(localStorage.getItem('forge.cfg')||'{}');}catch(e){}
 
-/* ================= Gemini model whitelist ================= */
-// ✅ FIX: only these model names are valid for the v1beta generateContent endpoint.
+/* ================= Gemini model whitelist (Updated to Gemini 3.x / 2.5) ================= */
 const VALID_GEMINI_MODELS = new Set([
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash-001',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
-  'gemini-1.5-pro',
-  'gemini-1.5-pro-002'
+  // Gemini 3.8 Series
+  'gemini-3.8-flash',
+  'gemini-3.8-live',
+  'gemini-3.8-live-extended-thinking',
+  'gemini-3.8-flash-tts',
+  'gemini-3.8-flash-lite-tts',
+  // Gemini 3.6 Series
+  'gemini-3.6-flash',
+  // Gemini 3.5 Series
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-live-translate-preview',
+  // Gemini 3.1 Series
+  'gemini-3.1-pro-preview',
+  'gemini-3.1-flash-live-preview',
+  'gemini-3.1-flash-tts-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-flash-image', // Nano Banana 2
+  // Gemini 3 Series
+  'gemini-3-flash-preview',
+  // Gemini 2.5 Series (legacy but still active)
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-image', // Nano Banana
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash-native-audio-preview-12-2025',
+  'gemini-2.5-flash-preview-tts',
+  'gemini-2.5-pro-preview-tts'
 ]);
 function validateGeminiModel(m){
   if(!VALID_GEMINI_MODELS.has(m)){
@@ -476,8 +545,6 @@ async function extractText(file,onProg){
     return {text:await file.text(),method:'PLAIN TEXT'};
   if(ext==='pdf'||file.type==='application/pdf'){
     await loadScript(PDFJS);
-    // ✅ FIX: original condition was inverted (`!== ''`), so the worker was never set.
-    // The correct check is "if not already set, set it".
     if(!window.pdfjsLib.GlobalWorkerOptions.workerSrc){
       window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFWK;
     }
@@ -509,7 +576,6 @@ const COMBINED_CAP=300000;
 async function addFiles(fileList){
   const files=[...fileList];
   if(!files.length)return;
-  // ✅ FIX: disable the forge button while extraction is in flight.
   const wasEnabled=!$('#forgeBtn').disabled;
   $('#forgeBtn').disabled=true;
   let added=0,rejected=0;
@@ -619,15 +685,14 @@ function renderProviderFields(){
       '<p class="hint">Key stays in this browser. Free-tier models are plenty for this job.</p>'+
       '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>';
   }else if(state.provider==='gemini'){
-    // ✅ FIX: datalist of valid model names prevents the 400 Bad Request from typos.
     w.innerHTML=
       '<div class="field"><label>API key</label><input id="gmKey" type="password" placeholder="AIza…" value="'+esc(K.gmKey||'')+'"></div>'+
       '<div class="field"><label>Model</label>'+
-        '<input id="gmModel" type="text" list="geminiModels" value="'+esc(M.gmModel||'gemini-2.0-flash')+'" placeholder="gemini-2.0-flash">'+
+        '<input id="gmModel" type="text" list="geminiModels" value="'+esc(M.gmModel||'gemini-3.8-flash')+'" placeholder="gemini-3.8-flash">'+
         '<datalist id="geminiModels">'+[...VALID_GEMINI_MODELS].map(m=>'<option value="'+m+'">').join('')+'</datalist>'+
       '</div>'+
       '<p class="hint">Free keys at aistudio.google.com — calls go straight from this page.</p>'+
-      '<p class="hint warn">Use a valid model like <code>gemini-2.0-flash</code>. Invalid names cause a 400 error.</p>'+
+      '<p class="hint warn">Use a valid model like <code>gemini-3.8-flash</code>. Invalid names cause a 400 error.</p>'+
       '<button type="button" class="btn2" id="testConn" style="margin-top:8px">test connection</button>';
   }else if(state.provider==='ollama'){
     w.innerHTML=
@@ -643,7 +708,6 @@ function renderProviderFields(){
   if(tb) tb.addEventListener('click',testConnection);
 }
 
-/* Always capture the current fields into memory. Persist keys only when remembered. */
 function captureFields(){
   cfg.provider=state.provider;cfg.thrift=state.thrift;cfg.budget=state.budget;
   cfg.tries=state.triesWanted;cfg.q=state.qCount;cfg.diff=$('#diff').value;
@@ -657,7 +721,6 @@ function writeCfg(){
   try{
     captureFields();
     const toSave=JSON.parse(JSON.stringify(cfg));
-    // ✅ FIX (security): never persist keys unless the box is ticked.
     if(!cfg.remember)toSave.keys={};
     localStorage.setItem('forge.cfg',JSON.stringify(toSave));
   }catch(e){}
@@ -670,57 +733,169 @@ function providerReady(){
   return null;}
 function modelLabel(){
   if(state.provider==='openrouter')return ($('#orModel')&&$('#orModel').value.trim())||'openai/gpt-4o-mini';
-  if(state.provider==='gemini')return ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-2.0-flash';
+  if(state.provider==='gemini')return ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-3.8-flash';
   if(state.provider==='ollama')return ($('#olModel')&&$('#olModel').value.trim())||'llama3.2';
   return 'drill sergeant';}
 
-async function chat(sys,usr,temp,maxTok){
-  const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),60000);
-  try{
-    if(state.provider==='openrouter'){
-      const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{signal:ctl.signal,method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+$('#orKey').value.trim()},
-        body:JSON.stringify({model:modelLabel(),messages:[{role:'system',content:sys},{role:'user',content:usr}],temperature:temp,max_tokens:maxTok})});
-      const d=await r.json();
-      if(!r.ok){
-        const msg=(d&&d.error&&d.error.message)||('HTTP '+r.status);
-        throw new Error('OpenRouter API error: '+msg);
+/* ================= chat function with SSE streaming support ================= */
+async function chat(sys, usr, temp, maxTok, stream = false) {
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 60000);
+  try {
+    if (state.provider === 'openrouter') {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        signal: ctl.signal,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + $('#orKey').value.trim()
+        },
+        body: JSON.stringify({
+          model: modelLabel(),
+          messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
+          temperature: temp,
+          max_tokens: maxTok,
+          stream: stream // Enable streaming if requested
+        })
+      });
+      if (!r.ok) {
+        const d = await r.json();
+        const msg = (d && d.error && d.error.message) || ('HTTP ' + r.status);
+        throw new Error('OpenRouter API error: ' + msg);
       }
-      return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
+      if (stream) {
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let fullText = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          // SSE format: data: {...}\n\n
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6).trim();
+              if (dataStr === '[DONE]') continue;
+              try {
+                const data = JSON.parse(dataStr);
+                const delta = data.choices?.[0]?.delta?.content || '';
+                fullText += delta;
+              } catch (e) { /* ignore parse errors for partial chunks */ }
+            }
+          }
+        }
+        return fullText;
+      } else {
+        const d = await r.json();
+        return d.choices?.[0]?.message?.content || '';
+      }
     }
-    if(state.provider==='gemini'){
-      const model=modelLabel();
-      const key=$('#gmKey').value.trim();
-      if(!key)throw new Error('Gemini API key is missing.');
-      // ✅ FIX: validate model name before calling the API → prevents 400s.
+
+    if (state.provider === 'gemini') {
+      const model = modelLabel();
+      const key = $('#gmKey').value.trim();
+      if (!key) throw new Error('Gemini API key is missing.');
       validateGeminiModel(model);
-      const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+
-        ':generateContent?key='+encodeURIComponent(key);
-      const r=await fetch(url,{signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:usr}]}],
-          generationConfig:{temperature:temp,maxOutputTokens:maxTok}})});
-      const d=await r.json();
-      if(!r.ok){
-        // ✅ FIX: surface the real API error message (not just the HTTP code).
-        const msg=(d&&d.error&&d.error.message)||('HTTP '+r.status);
-        throw new Error('Gemini API error: '+msg);
+      
+      const endpoint = stream 
+        ? 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':streamGenerateContent?alt=sse&key=' + encodeURIComponent(key)
+        : 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
+
+      const r = await fetch(endpoint, {
+        signal: ctl.signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: sys }] },
+          contents: [{ role: 'user', parts: [{ text: usr }] }],
+          generationConfig: { temperature: temp, maxOutputTokens: maxTok }
+        })
+      });
+
+      if (!r.ok) {
+        const d = await r.json();
+        const msg = (d && d.error && d.error.message) || ('HTTP ' + r.status);
+        throw new Error('Gemini API error: ' + msg);
       }
-      return ((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('');
+
+      if (stream) {
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let fullText = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          // Gemini SSE format: data: {...}\r\n\r\n
+          const lines = chunk.split(/\r?\n/);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6).trim();
+              try {
+                const data = JSON.parse(dataStr);
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                fullText += text;
+              } catch (e) { /* ignore parse errors */ }
+            }
+          }
+        }
+        return fullText;
+      } else {
+        const d = await r.json();
+        return ((d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) || []).map(p => p.text || '').join('');
+      }
     }
-    if(state.provider==='ollama'){
-      const base=(($('#olBase').value||'http://localhost:11434').trim()).replace(/\/+$/,'');
-      const r=await fetch(base+'/api/chat',{signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({model:modelLabel(),messages:[{role:'system',content:sys},{role:'user',content:usr}],
-          stream:false,options:{temperature:temp,num_predict:maxTok}})});
-      const d=await r.json();
-      if(!r.ok){
-        const msg=(typeof d.error==='string'&&d.error)||('HTTP '+r.status);
-        throw new Error('Ollama API error: '+msg);
+
+    if (state.provider === 'ollama') {
+      const base = (($('#olBase').value || 'http://localhost:11434').trim()).replace(/\/+$/, '');
+      const r = await fetch(base + '/api/chat', {
+        signal: ctl.signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelLabel(),
+          messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
+          stream: stream,
+          options: { temperature: temp, num_predict: maxTok }
+        })
+      });
+      if (!r.ok) {
+        const d = await r.json();
+        const msg = (typeof d.error === 'string' && d.error) || ('HTTP ' + r.status);
+        throw new Error('Ollama API error: ' + msg);
       }
-      return (d.message&&d.message.content)||'';
+      
+      if (stream) {
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let fullText = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          // Ollama stream is newline-delimited JSON
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.message?.content) {
+                fullText += data.message.content;
+              }
+            } catch (e) { /* ignore parse errors */ }
+          }
+        }
+        return fullText;
+      } else {
+        const d = await r.json();
+        return (d.message && d.message.content) || '';
+      }
     }
     throw new Error('No network provider selected.');
-  }finally{clearTimeout(to);}
+  } finally {
+    clearTimeout(to);
+  }
 }
 
 /* ---------- connection test ---------- */
@@ -775,7 +950,6 @@ function localGenerate(count,prevStems,seed){
     let term=null;
     if(caps.length&&wc<=26)term=caps[0];
     else{
-      // ✅ IMPROVEMENT: prefer a low-frequency but still repeated word, fall back to single-occurrence if needed.
       const ranked=toks.filter(t=>!STOP.has(t.toLowerCase()))
         .map(t=>({t,f:tf.get(t.toLowerCase())||0}))
         .sort((a,b)=>a.f-b.f);
@@ -827,7 +1001,6 @@ function localGenerate(count,prevStems,seed){
     if(top.length>=4)picked.push({q:'Which term carries the greatest weight in this source?',
       choices:shuffle(top,rng),answer:0,topic:'recall'});
   }
-  // ✅ IMPROVEMENT: drop malformed questions and duplicate answers before returning.
   const seen=new Set();
   return picked.filter(q=>{
     if(!Array.isArray(q.choices)||q.choices.length<4)return false;
@@ -937,7 +1110,8 @@ async function makeTry(n,job,prevStems){
     if(job.kind==='reform')usr+='\nThe previous attempt was rejected as lazy. Be complete and original.';
     const maxTok=th?state.qCount*130+250:state.qCount*260+450;
     tok.sent=Math.round((sys.length+usr.length)/4);
-    raw=await chat(sys,usr,temp,maxTok);
+    // Use stream: true for a more responsive feel, even though we wait for full text
+    raw=await chat(sys,usr,temp,maxTok, true);
     tok.got=Math.round((raw||'').length/4);
     state.spent+=tok.sent+tok.got;
   }
@@ -1042,7 +1216,8 @@ async function doSA(btn,q){
       const usr='Question: '+q.q+'\nCorrect answer: '+correct+
         (th?'':'\nSource excerpt: '+condense(state.text,800))+'\nExplain why that is the answer, in simple words.';
       const sent=(sys.length+usr.length)/4;
-      const r=await chat(sys,usr,0.4,th?110:240);
+      // Use stream: true for SA
+      const r=await chat(sys,usr,0.4,th?110:240, true);
       state.spent+=sent+((r||'').length/4);updateMeter();
       txt=(r||'').trim().replace(/^["']+|["']+$/g,'');
       if(!txt)throw new Error('empty reply');}
@@ -1053,7 +1228,6 @@ async function doSA(btn,q){
 
 /* ================= PDF release ================= */
 async function ensurePdfLibs(){
-  // ✅ IMPROVEMENT: try primary CDN first, fall back to unpkg on failure.
   try{
     await Promise.all([loadScript(JSPDF_SRC),loadScript(H2C_SRC)]);
   }catch(e1){
@@ -1065,7 +1239,6 @@ async function ensurePdfLibs(){
   }
   if(!window.jspdf||!window.jspdf.jsPDF)throw new Error('jsPDF failed to load');
   if(!window.html2canvas)throw new Error('html2canvas failed to load');
-  // ✅ IMPROVEMENT: don't hang forever waiting for webfonts.
   if(document.fonts&&document.fonts.ready){
     try{
       await Promise.race([
@@ -1079,7 +1252,6 @@ async function ensurePdfLibs(){
 async function releasePdf(el,filename){
   await ensurePdfLibs();
 
-  /* Clone for rendering so we never touch the live paper. */
   const clone=el.cloneNode(true);
   clone.classList.add('pdf-clean');
   clone.style.position='absolute';
@@ -1191,7 +1363,6 @@ async function releaseAllPdfs(){
   }
 }
 
-/* Delegated binding for per-trial PDF buttons. */
 sheets.addEventListener('click',e=>{
   const btn=e.target.closest('.pdfbtn');
   if(!btn)return;
@@ -1362,20 +1533,27 @@ function updateMeter(){
   else $('#condLine').textContent='';
 }
 
+/* ADSTERRA CLOSE BUTTON LOGIC */
+document.getElementById('adsterra-close').addEventListener('click', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const wrapper = document.getElementById('adsterra-wrapper');
+  // We use visibility:hidden and display:none to ensure the ad script doesn't throw an error.
+  // Removing the element from the DOM while the ad script is running is what causes the page to freeze.
+  wrapper.style.setProperty('display', 'none', 'important');
+});
+
 /* ================= boot ================= */
 try{
-  // ✅ FIX: load saved settings into state BEFORE binding steppers or rendering.
   if(cfg.thrift===false){$('#thrift').checked=false;state.thrift=false;}
   if(cfg.budget){$('#budget').value=cfg.budget;state.budget=cfg.budget;}
   if(cfg.tries)state.triesWanted=cfg.tries;
   if(cfg.q)state.qCount=cfg.q;
   if(cfg.diff)$('#diff').value=cfg.diff;
 
-  // Render provider fields (with saved keys/models inside).
   renderProviderFields();
   updateMeter();
 
-  // Switch to saved provider without double-rendering.
   if(cfg.provider&&cfg.provider!=='openrouter'){
     const b=$('#provSeg [data-p="'+cfg.provider+'"]');
     if(b){
@@ -1386,7 +1564,6 @@ try{
     }
   }
 
-  // Bind steppers once, after state is final.
   bindStepper('stTries',1,6,()=>state.triesWanted,v=>state.triesWanted=v);
   bindStepper('stQ',3,8,()=>state.qCount,v=>state.qCount=v);
 }catch(e){console.error('boot',e);}
