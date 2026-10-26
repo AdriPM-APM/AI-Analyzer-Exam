@@ -413,6 +413,22 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   line-height: 1.5;
 }
 
+/* per-slot loading note: shown while the network inks the notice */
+.adsterra-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font: italic 500 12.5px var(--serif);
+  color: var(--ink2);
+  text-align: center;
+  padding: 14px;
+  animation: adInk 1.4s ease-in-out infinite;
+}
+@keyframes adInk {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+
 /* --- UNDELETABLE INLINE AD (After Results) --- */
 #adsterra-inline-wrapper {
   display: none; /* Hidden until report generates */
@@ -1652,11 +1668,12 @@ function buildReport(elapsed){
   $('#releaseFinal').onclick=releaseFinalPdf;
   $('#releaseAll').onclick=releaseAllPdfs;
   
-  // Undeletable results ad: mounted fresh at visibility time so it always fills.
-  // The pinned ad yields the desk — it falls off, one notice stays active.
+  // Undeletable results ad: this is its turn. The pinned notice that loaded
+  // first stays on the wall untouched (cached, never reloaded) — so both
+  // banners show side by side. If the inline creative is already cached in
+  // its slot, mountAd reuses it instead of fetching again.
   document.getElementById('adsterra-inline-wrapper').style.display = 'flex';
   mountAd('#adsterra-inline-slot');
-  fallFixedAd();
 
   rep.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -1667,11 +1684,11 @@ function clearDesk(){
   sheets.innerHTML='';ledgerBody.innerHTML='<div class="lempty">— no trials graded yet —</div>';ledgerFoot();
   $$('#deskcol .report').forEach(e=>e.remove());
   $('#emptyNote').style.display=state.text?'none':'block';updateMeter();
+  // hide the results ad with the report, but keep its loaded creative
+  // cached in the slot — the next report reuses it without another fetch
   const iw=document.getElementById('adsterra-inline-wrapper');
-  if(iw){iw.style.display='none';const islot=document.getElementById('adsterra-inline-slot');
-    if(islot){islot.dataset.retried='';islot.innerHTML='';}}
-  const fslot=document.getElementById('adsterra-fixed-slot');
-  if(fslot)fslot.dataset.retried='';
+  if(iw)iw.style.display='none';
+
 }
  $('#clearDesk').onclick=()=>{if(state.running)return;clearDesk();slip('Desk cleared. Fresh paper on the tray.');};
 
@@ -1762,62 +1779,92 @@ function updateMeter(){
   else $('#condLine').textContent='';
 }
 
-/* ================= ad desk (Adsterra availability manager) =================
-   One invocation key can only fill ONE container on the page, and the script
-   scans for #container-<key> only at the moment it runs. So:
-   • the slot that is actually visible mounts a fresh, cache-busted script;
-   • the other slot is cleared — no duplicate containers, no silent blanks;
-   • if the network returns nothing, we retry once, then show a graceful note. */
+/* ================= ad desk (Adsterra dual-slot manager) =================
+   One invocation key can only fill ONE container at a time, and the script
+   scans for #container-<key> only at the moment it runs. So the two banners
+   take turns sharing the canonical id:
+   • the pinned banner loads first (wide desks) — turn one;
+   • the results banner mounts when the report appears — turn two;
+   • the first-loaded container is PARKED, not cleared: its creative stays
+     rendered (in-session cache) and both banners show side by side;
+   • a slot that is already filled is reused as-is — never re-fetched;
+   • empty or failing loads (bad cert, network) retry once with a fresh
+     cache-buster, then show a graceful note. */
 const AD_KEY='95b306005d291ce020bf1c5e78598c8f';
 const AD_SRC='https://bauval.org/21/'+AD_KEY;
 const adState={fixedClosed:false};
 
+function containerFilled(el){return !!el&&el.childElementCount>0;}
+
+function setSlotState(slot,state){
+  const l=slot.querySelector('.adsterra-loading');
+  const f=slot.querySelector('.adsterra-fallback');
+  if(l)l.style.display=state==='loading'?'grid':'none';
+  if(f)f.style.display=state==='fallback'?'grid':'none';
+}
+
 function fillSlot(slot){
-  // one live container in the whole document, inside the requested slot
-  document.querySelectorAll('.adsterra-live').forEach(el=>{if(el.parentElement!==slot)el.remove();});
+  // Park every other live container instead of destroying it: its rendered ad
+  // stays on screen (cached), it only yields the canonical id so the fresh
+  // script instance scans and fills THIS slot's container.
+  document.querySelectorAll('.adsterra-live').forEach(el=>{
+    if(el.parentElement!==slot&&el.id==='container-'+AD_KEY)
+      el.id='container-'+AD_KEY+'-parked';
+  });
   slot.innerHTML='<div id="container-'+AD_KEY+'" class="adsterra-live"></div>'+
-    '<div class="adsterra-fallback">sponsor’s notice — between campaigns right now</div>';
+    '<div class="adsterra-loading">inking the sponsor\u2019s notice\u2026</div>'+
+    '<div class="adsterra-fallback">sponsor\u2019s notice \u2014 between campaigns right now</div>';
   const s=document.createElement('script');
   s.async=true;
   s.setAttribute('data-cfasync','false');
   s.src=AD_SRC+'?cb='+Date.now();
+  // network / cert failures (ERR_CERT_AUTHORITY_INVALID etc.) land here:
+  // the poll retries once with a new cache-buster, then the fallback shows.
+  s.onerror=()=>{console.warn('Adsterra script failed to load \u2014 will retry once, then fall back.');};
   slot.appendChild(s);
+  return s;
 }
 
-function showAdFallback(slot){
-  const f=slot.querySelector('.adsterra-fallback');
-  if(f)f.style.display='grid';
-}
+function showAdFallback(slot){setSlotState(slot,'fallback');}
 
-function mountAd(slotSel){
+/* mountAd(slotSel[, done])
+   • in-session cache: a slot that already holds a filled ad is kept as-is (no reload)
+   • turn order: the fixed banner loads at page open, the inline one mounts when the
+     report appears — and both stay visible; the first-loaded keeps rendering
+     while the second loads */
+function mountAd(slotSel,done){
   const slot=document.querySelector(slotSel);
-  if(!slot)return;
-  slot.dataset.retried='';
-  fillSlot(slot);
-  // availability guard: nothing rendered after 6s → one retry → graceful note
-  setTimeout(()=>{
-    const c=slot.querySelector('.adsterra-live');
-    if(c&&c.childElementCount===0){
-      if(slot.dataset.retried==='1'){showAdFallback(slot);return;}
-      slot.dataset.retried='1';
-      fillSlot(slot);
-      setTimeout(()=>{
-        const c2=slot.querySelector('.adsterra-live');
-        if(c2&&c2.childElementCount===0)showAdFallback(slot);
-      },6000);
-    }
-  },6000);
+  if(!slot){done&&done(false);return;}
+  const live=slot.querySelector('.adsterra-live');
+  if(containerFilled(live)){setSlotState(slot,'loaded');done&&done(true);return;}
+  const attempt=(isRetry)=>{
+    fillSlot(slot);
+    setSlotState(slot,'loading');
+    let t=0;
+    const iv=setInterval(()=>{
+      t++;
+      const c=slot.querySelector('.adsterra-live');
+      if(containerFilled(c)){clearInterval(iv);setSlotState(slot,'loaded');done&&done(true);return;}
+      if(t>=6){
+        clearInterval(iv);
+        if(!isRetry)attempt(true);          // one clean retry with a new cache-buster
+        else{showAdFallback(slot);done&&done(false);}
+      }
+    },1000);
+  };
+  attempt(false);
 }
 
-/* realistic fall: sheet tears off its pin, tumbles and drops off the desk */
+/* realistic fall: sheet tears off its pin, tumbles and drops off the desk.
+   Only runs when the reader closes the pinned ad — never to make room. */
 function fallFixedAd(){
   const w=document.getElementById('adsterra-fixed-wrapper');
   if(!w||w.classList.contains('falling'))return;
   if(getComputedStyle(w).display==='none')return;
   w.classList.add('falling');
-  let done=false;
+  let doneFlag=false;
   const finish=()=>{
-    if(done)return;done=true;
+    if(doneFlag)return;doneFlag=true;
     w.style.setProperty('display','none','important');
     w.classList.remove('falling');
     adState.fixedClosed=true;
