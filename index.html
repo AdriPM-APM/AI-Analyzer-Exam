@@ -321,9 +321,9 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
   z-index: 1;
   flex: 1;
   margin-top: 15px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  display: block; /* Changed from flex to block */
+  min-width: 300px;
+  min-height: 250px;
   overflow: hidden;
 }
 
@@ -527,17 +527,9 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;background:var(--red)
     <div class="adsterra-pin"></div>
     <button id="adsterra-close-btn" title="Close Ad" aria-label="Close Ad">&times;</button>
     <div class="adsterra-content">
-      <!-- Adsterra Script -->
-      <script type="text/javascript">
-        atOptions = {
-          'key' : '95b306005d291ce020bf1c5e78598c8f',
-          'format' : 'iframe',
-          'height' : 250,
-          'width' : 300,
-          'params' : {}
-        };
-      </script>
-      <script type="text/javascript" src="//www.highperformanceformat.com/95b306005d291ce020bf1c5e78598c8f/invoke.js"></script>
+      <!-- Using the reliable native banner script here too -->
+      <script async="async" data-cfasync="false" src="https://bauval.org/21/95b306005d291ce020bf1c5e78598c8f"></script>
+      <div id="container-95b306005d291ce020bf1c5e78598c8f-fixed"></div>
     </div>
   </div>
 </div>
@@ -579,19 +571,27 @@ const state={files:[],text:'',provider:'openrouter',thrift:true,budget:2400,
 let srcGrams=null;
 let cfg={};try{cfg=JSON.parse(localStorage.getItem('forge.cfg')||'{}');}catch(e){}
 
-/* ================= Gemini model whitelist ================= */
+/* ================= Gemini model whitelist (Updated to latest endpoints) ================= */
 const VALID_GEMINI_MODELS = new Set([
+  // Gemini 4 Series
+  'gemini-4-argon',
+  // Gemini 3.8 Series
   'gemini-3.8-flash', 'gemini-3.8-live', 'gemini-3.8-live-extended-thinking',
   'gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts',
+  // Gemini 3.7 Series
+  'gemini-3.7-flash',
+  // Gemini 3.6 Series
   'gemini-3.6-flash',
-  'gemini-3.5-flash-lite', 'gemini-3.5-live-translate-preview',
+  // Gemini 3.5 Series
+  'gemini-3.5-flash', 'gemini-3.5-flash-lite',
+  // Gemini 3.1 Series
   'gemini-3.1-pro-preview', 'gemini-3.1-flash-live-preview',
   'gemini-3.1-flash-tts-preview', 'gemini-3.1-flash-lite',
-  'gemini-3.1-flash-image',
+  'gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image',
+  // Gemini 3 Series
   'gemini-3-flash-preview',
-  'gemini-2.5-flash', 'gemini-2.5-flash-image', 'gemini-2.5-flash-lite',
-  'gemini-2.5-pro', 'gemini-2.5-flash-native-audio-preview-12-2025',
-  'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'
+  // Nano Banana Series
+  'gemini-nano-banana-2.1', 'gemini-nano-banana-2', 'gemini-nano-banana-pro'
 ]);
 function validateGeminiModel(m){
   if(!VALID_GEMINI_MODELS.has(m)){
@@ -939,6 +939,32 @@ async function chat(sys, usr, temp, maxTok, stream = false) {
       if (!key) throw new Error('Gemini API key is missing.');
       validateGeminiModel(model);
       
+      // Gemini 4 Argon uses the new interactions endpoint
+      if (model === 'gemini-4-argon') {
+        const r = await fetchWithRetry('https://generativelanguage.googleapis.com/v1beta/interactions', {
+          signal: ctl.signal,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': key
+          },
+          body: JSON.stringify({
+            model: model,
+            input: usr,
+            system_instruction: sys
+          })
+        });
+        if (!r.ok) {
+          const d = await r.json();
+          const msg = (d && d.error && d.error.message) || ('HTTP ' + r.status);
+          throw new Error('Gemini 4 Argon API error: ' + msg);
+        }
+        const d = await r.json();
+        // Assuming the response structure is similar to OpenAI's chat completions
+        return d.choices?.[0]?.message?.content || d.output?.text || '';
+      }
+
+      // Standard Gemini 3.x/2.5 models
       const endpoint = stream 
         ? 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':streamGenerateContent?alt=sse&key=' + encodeURIComponent(key)
         : 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
@@ -948,7 +974,8 @@ async function chat(sys, usr, temp, maxTok, stream = false) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: sys }] },
+          // FIXED: Using snake_case system_instruction and proper contents structure
+          system_instruction: { parts: [{ text: sys }] },
           contents: [{ role: 'user', parts: [{ text: usr }] }],
           generationConfig: { temperature: temp, maxOutputTokens: maxTok }
         })
