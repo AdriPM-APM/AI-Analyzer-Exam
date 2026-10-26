@@ -1789,10 +1789,85 @@ function updateMeter(){
      rendered (in-session cache) and both banners show side by side;
    • a slot that is already filled is reused as-is — never re-fetched;
    • empty or failing loads (bad cert, network) retry once with a fresh
-     cache-buster, then show a graceful note. */
+     cache-buster, then show a graceful note;
+   • dynamic culling: hosts serving broken creatives (bad certificates,
+     dead links) collect strikes and are benched 5 min after two — no
+     further fetches, one automatic remount when the bench expires. */
 const AD_KEY='95b306005d291ce020bf1c5e78598c8f';
 const AD_SRC='https://bauval.org/21/'+AD_KEY;
 const adState={fixedClosed:false};
+
+/* ---- dynamic culling: unhealthy resources get benched automatically ----
+   Bad-certificate images (ERR_CERT_AUTHORITY_INVALID), dead links and failed
+   script fetches each earn their host a strike. Two strikes = the host sits
+   out five minutes: no re-fetch attempts, no console spam, the banner shows
+   its graceful note instead. When the bench expires one clean remount runs. */
+const AD_CULL={fails:new Map(),MAX:2,CD_MS:5*60*1000,timer:null};
+
+function hostOf(u){try{return new URL(u,location.href).host;}catch(e){return 'unknown';}}
+
+function cullCheck(host){
+  const r=AD_CULL.fails.get(host);
+  if(!r)return false;
+  if(r.until&&Date.now()>r.until){AD_CULL.fails.delete(host);
+    console.info('[forge cull]',host,'bench expired \u2014 one clean remount granted.');return false;}
+  return true;
+}
+
+function cullNote(srcUrl,reason){
+  const host=hostOf(srcUrl||'');
+  const r=AD_CULL.fails.get(host)||{n:0,until:0};
+  r.n++;
+  if(r.n>=AD_CULL.MAX){r.until=Date.now()+AD_CULL.CD_MS;
+    console.warn('[forge cull]',host,'benched 5 min \u2014',reason);}
+  else console.warn('[forge cull]',host,'strike',r.n,'of',AD_CULL.MAX,'\u2014',reason);
+  AD_CULL.fails.set(host,r);
+}
+
+/* remount once automatically after the bench expires */
+function scheduleCullRetry(slotSel,done){
+  if(AD_CULL.timer){done&&done(false);return;}
+  const r=AD_CULL.fails.get(hostOf(AD_SRC));
+  const wait=Math.max(1000,(r&&r.until?r.until:Date.now()+AD_CULL.CD_MS)-Date.now());
+  console.info('[forge cull] remount scheduled in',Math.round(wait/1000)+'s.');
+  AD_CULL.timer=setTimeout(()=>{AD_CULL.timer=null;
+    const s=document.querySelector(slotSel);
+    if(s&&!containerFilled(s.querySelector('.adsterra-live')))mountAd(slotSel,done);
+  },wait);
+}
+
+/* strike resources the moment they fail \u2014 capture phase catches injected imgs */
+function inAdSlot(t){return !!(t&&t.closest&&t.closest('.adsterra-content'));}
+window.addEventListener('error',function(e){
+  const t=e.target;
+  if(!t||!t.tagName)return;
+  if(t.tagName==='IMG'&&inAdSlot(t)){
+    cullNote(t.currentSrc||t.src,'creative image rejected (bad certificate / dead link)');
+    const slot=t.closest('.adsterra-content');
+    t.remove();                                   // cull the broken node at once
+    const live=slot&&slot.querySelector('.adsterra-live');
+    if(live&&!live.childElementCount)showAdFallback(slot);
+    return;
+  }
+  if(t.tagName==='SCRIPT'&&t.src&&t.src.indexOf(hostOf(AD_SRC))>-1){
+    cullNote(t.src,'sponsor script fetch failed');
+  }
+},true);
+
+/* one-time hint: the recurring
+   "content.js:1 Uncaught (in promise) Error: No Listener: tabs:outgoing.message.ready"
+   line is thrown by a browser extension's content script \u2014 not by this page. */
+let extHintShown=false;
+function extHint(){if(extHintShown)return;extHintShown=true;
+  console.info('[forge] \u201cNo Listener: tabs:outgoing.message.ready\u201d comes from a browser extension (content.js), not from this page \u2014 an incognito window without extensions confirms it.');}
+window.addEventListener('error',function(e){
+  if(e&&e.filename&&/content\.js/i.test(e.filename))extHint();
+},true);
+window.addEventListener('unhandledrejection',function(ev){
+  const m=(ev&&ev.reason&&(ev.reason.message||String(ev.reason)))||'';
+  if(/No Listener|tabs:outgoing/i.test(m))extHint();
+});
+console.info('[forge cull] armed \u2014 bad certs and dead links get two strikes, then a 5-minute bench.');
 
 function containerFilled(el){return !!el&&el.childElementCount>0;}
 
@@ -1820,7 +1895,7 @@ function fillSlot(slot){
   s.src=AD_SRC+'?cb='+Date.now();
   // network / cert failures (ERR_CERT_AUTHORITY_INVALID etc.) land here:
   // the poll retries once with a new cache-buster, then the fallback shows.
-  s.onerror=()=>{console.warn('Adsterra script failed to load \u2014 will retry once, then fall back.');};
+  s.onerror=()=>{cullNote(AD_SRC,'sponsor script fetch failed');};
   slot.appendChild(s);
   return s;
 }
@@ -1838,6 +1913,7 @@ function mountAd(slotSel,done){
   const live=slot.querySelector('.adsterra-live');
   if(containerFilled(live)){setSlotState(slot,'loaded');done&&done(true);return;}
   const attempt=(isRetry)=>{
+    if(cullCheck(hostOf(AD_SRC))){setSlotState(slot,'loading');showAdFallback(slot);scheduleCullRetry(slotSel,done);return;}
     fillSlot(slot);
     setSlotState(slot,'loading');
     let t=0;
