@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Examination Forge</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚔️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -454,7 +455,9 @@ async function extractText(file,onProg){
     return {text:await file.text(),method:'PLAIN TEXT'};
   if(ext==='pdf'||file.type==='application/pdf'){
     await loadScript(PDFJS);
-    if(window.pdfjsLib.GlobalWorkerOptions.workerSrc!=='') window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFWK;
+    if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFWK;
+    }
     const buf=new Uint8Array(await file.arrayBuffer());
     const pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
     const pages=Math.min(pdf.numPages,60);const out=[];
@@ -584,7 +587,7 @@ function renderProviderFields(){
     '<p class="hint">Key stays in this browser. Free-tier models are plenty for this job.</p>';
   else if(state.provider==='gemini')w.innerHTML=
     '<div class="field"><label>API key</label><input id="gmKey" type="password" placeholder="AIza…" value="'+esc(K.gmKey||'')+'"></div>'+
-    '<div class="field"><label>Model</label><input id="gmModel" type="text" value="'+esc(M.gmModel||'gemini-2.0-flash')+'"></div>'+
+    '<div class="field"><label>Model</label><input id="gmModel" type="text" value="'+esc(M.gmModel||'gemini-2.5-flash')+'"></div>'+
     '<p class="hint">Free keys at aistudio.google.com — calls go straight from this page.</p>';
   else if(state.provider==='ollama')w.innerHTML=
     '<div class="field"><label>Base URL</label><input id="olBase" type="text" value="'+esc(M.olBase||'http://localhost:11434')+'"></div>'+
@@ -593,7 +596,7 @@ function renderProviderFields(){
   else w.innerHTML='<p class="hint">No network at all — the <b>Drill Sergeant</b> writes cloze and recall items straight out of your text. Zero tokens, instant, and the warden grades it exactly the same.</p>';
   w.querySelectorAll('input').forEach(i=>i.addEventListener('change',saveCfg));
 }
-/* Always capture the current fields into memory. Persist keys only when remembered. */
+
 function captureFields(){
   cfg.provider=state.provider;cfg.thrift=state.thrift;cfg.budget=state.budget;
   cfg.tries=state.triesWanted;cfg.q=state.qCount;cfg.diff=$('#diff').value;
@@ -619,7 +622,10 @@ function providerReady(){
   return null;}
 function modelLabel(){
   if(state.provider==='openrouter')return ($('#orModel')&&$('#orModel').value.trim())||'openai/gpt-4o-mini';
-  if(state.provider==='gemini')return ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-2.0-flash';
+  if(state.provider==='gemini'){
+    const raw = ($('#gmModel')&&$('#gmModel').value.trim())||'gemini-2.5-flash';
+    return raw.replace(/^google\//i, '');
+  }
   if(state.provider==='ollama')return ($('#olModel')&&$('#olModel').value.trim())||'llama3.2';
   return 'drill sergeant';}
 
@@ -634,10 +640,14 @@ async function chat(sys,usr,temp,maxTok){
       return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
     }
     if(state.provider==='gemini'){
-      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(modelLabel())+':generateContent?key='+encodeURIComponent($('#gmKey').value.trim()),
+      const model = modelLabel();
+      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent($('#gmKey').value.trim()),
         {signal:ctl.signal,method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:usr}]}],
-          generationConfig:{temperature:temp,maxOutputTokens:maxTok}})});
+        body:JSON.stringify({
+          systemInstruction:{parts:[{text:sys}]},
+          contents:[{role:'user',parts:[{text:usr}]}],
+          generationConfig:{temperature:temp,maxOutputTokens:maxTok}
+        })});
       const d=await r.json();if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));
       return ((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('');
     }
@@ -960,7 +970,6 @@ async function ensurePdfLibs(){
 async function releasePdf(el,filename){
   await ensurePdfLibs();
 
-  /* Clone for rendering so we never touch the live paper. */
   const clone=el.cloneNode(true);
   clone.classList.add('pdf-clean');
   clone.style.position='absolute';
@@ -974,7 +983,6 @@ async function releasePdf(el,filename){
   document.body.appendChild(clone);
 
   try{
-    /* Give the clone a frame to lay out. */
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 
     const canvas=await html2canvas(clone,{
@@ -992,7 +1000,6 @@ async function releasePdf(el,filename){
     if(imgH<=pdfH+0.5){
       pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',0,0,imgW,imgH);
     }else{
-      /* Paginate across A4 sheets. */
       const pageCanvasH=Math.floor(canvas.width*pdfH/pdfW);
       const pages=Math.ceil(canvas.height/pageCanvasH);
       for(let i=0;i<pages;i++){
@@ -1065,7 +1072,7 @@ async function releaseAllPdfs(){
         fail++;
         slip('Failed: '+papers[i].name+' — '+e.message,'red');
       }
-      await sleep(450); /* avoid the browser blocking repeated downloads */
+      await sleep(450);
     }
     slip('Released '+ok+' PDF'+(ok===1?'':'s')+(fail?' ('+fail+' failed)':'')+'.','green');
   }finally{
